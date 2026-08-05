@@ -1,0 +1,33 @@
+{
+  "name": "hunter-protocol",
+  "version": "0.1.0",
+  "description": "Hunter Protocol - a turn-based Solo Leveling-inspired hunter RPG. Plays on Web, Windows (Electron) and Android (Capacitor).",
+  "private": true,
+  "type": "module",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "play": "vite preview --open --port 4173",
+    "play:web": "npm run build && npm run play",
+    "electron:dev": "npm run build && electron .",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build:linux": "npm run build && electron-builder --linux",
+    "cap:init": "cap init \"Hunter Protocol\" \"com.huntersguild.hunterprotocol\" --web-dir=dist",
+    "cap:add:android": "cap add android",
+    "cap:sync": "npm run build && cap sync android",
+    "cap:open:android": "cap open android",
+    "typecheck": "tsc -b --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@capacitor/android": "^7.2.0",
+    "@capacitor/cli": "^7.2.0",
+    "@capacitor/core": "^7.2.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3"
+  }
+}
