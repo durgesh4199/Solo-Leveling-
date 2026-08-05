@@ -2,12 +2,12 @@ import type { Game } from "../store";
 import { simpleScreen } from "./types";
 import { icon } from "../art/icons";
 import { gatePortrait } from "../art/portraits";
-import { RANK_TAG_CLASS, waveCountForGate } from "../data";
+import { RANK_TAG_CLASS, totalEnemiesForGate } from "../data";
 
 export const gatesScreen = simpleScreen((game: Game) => {
   const rows = game.gates.map((gate) => {
     const cleared = !!game.state.gatesCleared[gate.id];
-    const waves = waveCountForGate(gate);
+    const total = totalEnemiesForGate(gate);
     return `
       <div class="gate-row ${cleared ? "cleared" : ""}" style="border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);padding:var(--space-4);display:flex;align-items:center;justify-content:space-between;" data-action="enter-gate" data-gate-id="${gate.id}">
         <div style="display:flex;align-items:center;gap:var(--space-3);">
@@ -15,7 +15,7 @@ export const gatesScreen = simpleScreen((game: Game) => {
           <div class="tag ${RANK_TAG_CLASS[gate.rank]}" style="min-width:28px;justify-content:center;">${gate.rank}</div>
           <div>
             <div style="font-size:15px;font-weight:500;">${gate.name}</div>
-            <div style="font-size:12px;color:var(--color-neutral-500);">${gate.monsterName} · ${waves - 1} + boss · Rec. Lv ${gate.recommendedLevel}</div>
+            <div style="font-size:12px;color:var(--color-neutral-500);">${gate.monsterName} · ${total - 1} + boss · Rec. Lv ${gate.recommendedLevel}</div>
           </div>
         </div>
         ${cleared

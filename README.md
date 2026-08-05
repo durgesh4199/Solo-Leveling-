@@ -20,23 +20,30 @@ engine, no external art/font dependencies — built to run on:
   (Goblin Scout) → *Sunken Crypt* (Orc Brute) → *Frost Hollow* (Ice Wraith)
   → *Red Cathedral* (Blood Knight) → *Void Spire* (Shadow Beast) →
   *Dragon's Maw* (Ancient Wyrm)
-- **Multi-wave encounters** — each gate is a run of several fights, not
-  one: 3 waves on E/D gates up to 5 on A/S gates, each wave a notch tougher
-  than the last ("easy to hard"), capped by a **boss** — a visually
-  amplified version of that gate's monster (bigger portrait, glowing
-  rotating ring, boss name, heavier stats). HP/MP carry over between waves
-  within a run — no free heals, potions are the only relief — so a gate
-  gets genuinely harder as you go
-- **Battle** — turn-based: **Attack**, **Dagger Rush** (15 MP skill),
-  **Guard** (halves the next hit), **Potion** (+30 HP). Feedback is purely
-  visual (floating numbers, hit-flash, slash/flurry effects) - no text log
-- **Leveling** — XP is granted per kill (trash waves give a smaller cut,
+- **Multi-enemy gates** — each gate is a 10-20 enemy gauntlet (rank-scaled:
+  10 on E, up to 20 on S), fought in waves of up to **3 simultaneous
+  enemies**, ramping in strength across the whole run ("easy to hard"),
+  capped by a solo **boss** — a visually amplified version of that gate's
+  monster (bigger portrait, glowing rotating ring, boss name, heavier
+  stats). HP/MP carry over between waves within a run — no free heals,
+  potions are the only relief
+- **Battle** — turn-based, auto-targeting the frontmost living enemy
+  (underlined): **Attack**, **Skills** (see below), **Guard** (halves
+  incoming damage), **Potion** (+35 HP). All alive enemies in a wave attack
+  each round, so a full group is real pressure. Feedback is purely visual
+  (floating numbers, hit-flash, slash/flurry effects) - no text log
+- **Skills** — unlock progressively with level, opened via a picker panel
+  (locked ones show their unlock level): **Dagger Rush** (Lv 1, heavy
+  single hit), **Piercing Thrust** (Lv 5, hits the front 2 enemies),
+  **Shadow Execute** (Lv 10, single-target - doubled against a wounded
+  target), **Umbral Storm** (Lv 15, hits the entire wave)
+- **Leveling** — XP is granted per kill (trash enemies give a smaller cut,
   the boss a bonus); the curve grows 1.25x per level, and each level grants
   +15 max HP, +5 max MP, a full heal, and 3 stat points to spend on
   STR/AGI/INT/VIT/PER
-- **Shadow Army** — defeating the **boss** and choosing **Arise** on the
-  victory screen adds it as a permanent Shadow, ranked to your current
-  Hunter rank (trash-wave kills grant XP but don't offer Arise)
+- **Shadow Army** — **every** wave clear (trash or boss) offers **Arise** on
+  a short interstitial before continuing, adding that wave's monster as a
+  permanent Shadow ranked to your current Hunter rank - not just the boss
 - **Inventory** — starting gear (Dagger of the Depths, Reinforced Leather,
   Band of Focus) plus healing potions
 - Progress autosaves are **not yet wired up** (see Roadmap) — this MVP

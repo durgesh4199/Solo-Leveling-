@@ -31,7 +31,7 @@ export const inventoryScreen = simpleScreen((game: Game) => {
           <span style="font-size:20px;color:var(--color-accent-300);">${icon("flask")}</span>
           <div style="flex:1;">
             <div style="font-size:13px;font-weight:500;">Healing Potion</div>
-            <div style="font-size:11px;color:var(--color-neutral-500);">Restores 30 HP in battle</div>
+            <div style="font-size:11px;color:var(--color-neutral-500);">Restores 35 HP in battle</div>
           </div>
           <div class="tag tag-outline">x${game.state.inventory.potions}</div>
         </div>

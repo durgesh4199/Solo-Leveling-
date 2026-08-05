@@ -127,6 +127,9 @@ body {
 .gate-row:hover { border-color: var(--color-accent-600); background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
 .gate-row.cleared { opacity: 0.75; }
 
+.skill-row:last-child { border-bottom: none; }
+.skill-row:not(.is-disabled):hover { background: color-mix(in srgb, var(--color-accent) 8%, transparent); }
+
 .action-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 12%, transparent); }
 .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 .stat-plus:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 20%, transparent); }

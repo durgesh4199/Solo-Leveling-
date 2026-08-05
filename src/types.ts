@@ -34,6 +34,12 @@ export interface GateDef {
   xp: number;
 }
 
+export interface WavePlanEntry {
+  count: number;
+  isBoss: boolean;
+  unitStart: number; // global trash-unit index this wave starts at (for stat ramp)
+}
+
 export interface EquipmentItem {
   icon: string;
   name: string;
@@ -48,8 +54,22 @@ export interface ShadowRecord {
   type: string;
 }
 
+export type SkillKind = "single" | "cleave" | "execute" | "aoe";
+
+export interface SkillDef {
+  key: string;
+  name: string;
+  icon: string;
+  mpCost: number;
+  unlockLevel: number;
+  kind: SkillKind;
+  base: number;
+  scale: number;
+  description: string;
+}
+
 export type VfxKind = "slash" | "flurry" | null;
-export type LungeSide = "player" | "enemy" | null;
+export type LungeSide = "player" | null;
 export type FloatKind = "dmg" | "heal";
 
 export interface FloatText {
@@ -57,40 +77,52 @@ export interface FloatText {
   kind: FloatKind;
 }
 
-export type BattleResult = "victory" | "defeat" | null;
+/** One enemy within the current wave's group. Non-boss waves share a name
+ *  (battle.enemyName) and portrait (battle.monsterKey) - only their rolled
+ *  stats differ - so per-unit state only needs to track combat state. */
+export interface EnemyUnit {
+  uid: string;
+  hp: number;
+  maxHp: number;
+  atk: number;
+  def: number;
+  xp: number;
+  alive: boolean;
+  hit: boolean;
+  vfx: VfxKind;
+  lunging: boolean;
+  floatText: FloatText | null;
+  floatId: number;
+  glow: boolean;
+}
+
+export type BattleResult = "wave-clear" | "gate-clear" | "defeat" | null;
 
 export interface BattleState {
   gateId: string;
   gateName: string;
   monsterKey: string; // base monster type for this gate - used to pick portrait art
-  enemyName: string;  // display name; the boss wave gets the gate's bossName
-  enemyHp: number;
-  enemyMaxHp: number;
-  enemyAtk: number;
-  enemyDef: number;
-  xpReward: number;
+  enemyName: string;  // display name for the current wave (boss wave gets bossName)
+  isBossWave: boolean;
   waveIndex: number; // 1-based
   totalWaves: number;
-  isBoss: boolean;
+  enemies: EnemyUnit[];
+
   over: boolean;
   result: BattleResult;
   guarding: boolean;
   locked: boolean;
-  enemyHit: boolean;
   playerHit: boolean;
+  skillPanelOpen: boolean;
 
   vfxId?: number;
-  vfxEnemy?: VfxKind;
   vfxPlayer?: VfxKind;
   guardRing?: boolean;
   lunge?: LungeSide;
   flash?: boolean;
 
-  floatEnemy?: FloatText | null;
-  floatEnemyId?: number;
   floatPlayer?: FloatText | null;
   floatPlayerId?: number;
-  enemyGlow?: boolean;
   playerGlow?: boolean;
 }
 

@@ -1,8 +1,8 @@
-import type { EquipmentItem, GateDef, Rank } from "./types";
+import type { EquipmentItem, GateDef, Rank, SkillDef, WavePlanEntry } from "./types";
 
 /** Ported from the Hunter Protocol design file; extended with a boss name
- *  per gate for the multi-wave encounter system (see waveCountForRank /
- *  statsForWave in store.ts). */
+ *  per gate for the multi-wave encounter system (see buildWavePlan /
+ *  statsForUnit below). */
 export const GATES_DATA: GateDef[] = [
   { id: "g1", rank: "E", name: "Crumbling Ruins", monsterName: "Goblin Scout", bossName: "Goblin Overlord", recommendedLevel: 1, baseHp: 55, baseAtk: 7, baseDef: 0, xp: 25 },
   { id: "g2", rank: "D", name: "Sunken Crypt", monsterName: "Orc Brute", bossName: "Orc Warchief", recommendedLevel: 4, baseHp: 95, baseAtk: 11, baseDef: 2, xp: 45 },
@@ -12,38 +12,65 @@ export const GATES_DATA: GateDef[] = [
   { id: "g6", rank: "S", name: "Dragon's Maw", monsterName: "Ancient Wyrm", bossName: "Ancient Wyrm, Elder", recommendedLevel: 26, baseHp: 340, baseAtk: 34, baseDef: 14, xp: 200 }
 ];
 
-/** Number of enemies (trash waves + a final boss) a gate throws at you in
- *  one run. Higher ranks are longer gauntlets. */
-export const WAVE_COUNT_BY_RANK: Record<Rank, number> = {
-  E: 3, D: 3, C: 4, B: 4, A: 5, S: 5
+/** Total enemies (trash + the final boss) a gate throws at you in one run.
+ *  Ramps 10 -> 20 across the six ranks. */
+export const TOTAL_ENEMIES_BY_RANK: Record<Rank, number> = {
+  E: 10, D: 12, C: 14, B: 16, A: 18, S: 20
 };
 
-export function waveCountForGate(gate: GateDef): number {
-  return WAVE_COUNT_BY_RANK[gate.rank];
+/** Enemies fought simultaneously in one non-boss wave. */
+export const GROUP_SIZE = 3;
+
+export function totalEnemiesForGate(gate: GateDef): number {
+  return TOTAL_ENEMIES_BY_RANK[gate.rank];
 }
 
-/** Stat/XP scaling for a given wave (1-based) of a gate. Trash waves ramp
- *  up gradually ("easy to hard"); the final wave is the boss - a clear
- *  spike in every stat, with a bigger XP payout. */
-export function statsForWave(gate: GateDef, waveIndex: number, totalWaves: number) {
-  const isBoss = waveIndex === totalWaves;
-  if (isBoss) {
-    return {
-      name: gate.bossName,
-      hp: Math.round(gate.baseHp * 2.2),
-      atk: Math.round(gate.baseAtk * 1.5),
-      def: Math.round(gate.baseDef * 1.4) + 1,
-      xp: Math.round(gate.xp * 1.5)
-    };
+/** Splits a gate's trash-mob count into waves of up to GROUP_SIZE, plus a
+ *  final solo boss wave. E.g. E-rank (10 total = 9 trash + boss) -> three
+ *  waves of 3, then the boss. */
+export function buildWavePlan(gate: GateDef): WavePlanEntry[] {
+  const total = totalEnemiesForGate(gate);
+  const trashCount = total - 1;
+  const groupCount = Math.ceil(trashCount / GROUP_SIZE);
+  const plan: WavePlanEntry[] = [];
+  let unitCursor = 0;
+  for (let i = 0; i < groupCount; i++) {
+    const remaining = trashCount - i * GROUP_SIZE;
+    const count = Math.min(GROUP_SIZE, remaining);
+    plan.push({ count, isBoss: false, unitStart: unitCursor });
+    unitCursor += count;
   }
-  const rampT = totalWaves > 2 ? (waveIndex - 1) / (totalWaves - 2) : 0; // 0 at wave 1, 1 at the last trash wave
-  const scale = 1 + rampT * 0.5;
+  plan.push({ count: 1, isBoss: true, unitStart: unitCursor });
+  return plan;
+}
+
+/** Stat/XP for one trash unit, ramping smoothly across the *whole* trash
+ *  sequence (not per-wave) so a gate feels like one continuous escalation
+ *  ("easy to hard") regardless of how it's chunked into groups.
+ *
+ *  A gate is now a 9-19 enemy gauntlet rather than the old 3-5, and HP/MP
+ *  carry over the whole run - so per-unit output has to be tuned against
+ *  *cumulative* damage across every wave, not any single fight. Both HP
+ *  (kills land faster, fewer attacker-rounds accumulate) and per-unit
+ *  attack (up to GROUP_SIZE hit every round) are scaled well down from a
+ *  solo encounter's numbers. */
+export function statsForUnit(gate: GateDef, globalIndex: number, trashCount: number) {
+  const rampT = trashCount > 1 ? globalIndex / (trashCount - 1) : 0;
+  const scale = 1 + rampT * 0.6;
   return {
-    name: gate.monsterName,
-    hp: Math.round(gate.baseHp * scale),
-    atk: Math.round(gate.baseAtk * scale),
+    hp: Math.round(gate.baseHp * scale * 0.5),
+    atk: Math.max(1, Math.round(gate.baseAtk * scale * 0.2)),
     def: Math.round(gate.baseDef * scale),
-    xp: Math.round(gate.xp * 0.35 * scale)
+    xp: Math.round(gate.xp * 0.22 * scale)
+  };
+}
+
+export function statsForBoss(gate: GateDef) {
+  return {
+    hp: Math.round(gate.baseHp * 2.6),
+    atk: Math.round(gate.baseAtk * 1.5),
+    def: Math.round(gate.baseDef * 1.4) + 1,
+    xp: Math.round(gate.xp * 1.6)
   };
 }
 
@@ -73,3 +100,32 @@ export const STAT_DEFS: { key: "str" | "agi" | "int" | "vit" | "per"; label: str
   { key: "vit", label: "VIT — Vitality" },
   { key: "per", label: "PER — Perception" }
 ];
+
+/** Skills unlock progressively as the Hunter levels up. Attack/Guard/Potion
+ *  are always available; these are the spendable-MP options. */
+export const SKILLS: SkillDef[] = [
+  {
+    key: "dagger_rush", name: "Dagger Rush", icon: "flame", mpCost: 15, unlockLevel: 1,
+    kind: "single", base: 14, scale: 1.6,
+    description: "A heavy single-target strike."
+  },
+  {
+    key: "piercing_thrust", name: "Piercing Thrust", icon: "sword", mpCost: 20, unlockLevel: 5,
+    kind: "cleave", base: 10, scale: 1.3,
+    description: "Skewers the two frontmost enemies."
+  },
+  {
+    key: "shadow_execute", name: "Shadow Execute", icon: "skull", mpCost: 25, unlockLevel: 10,
+    kind: "execute", base: 18, scale: 1.8,
+    description: "Massive damage - doubled against a wounded target."
+  },
+  {
+    key: "umbral_storm", name: "Umbral Storm", icon: "lightning", mpCost: 35, unlockLevel: 15,
+    kind: "aoe", base: 12, scale: 1.4,
+    description: "Strikes every enemy in the current wave."
+  }
+];
+
+export function unlockedSkills(level: number): SkillDef[] {
+  return SKILLS.filter((s) => s.unlockLevel <= level);
+}
