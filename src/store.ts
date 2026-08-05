@@ -1,5 +1,5 @@
-import { GATES_DATA, SKILLS, buildWavePlan, rankForLevel, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
-import type { BattleState, EnemyUnit, FloatKind, GameState, GateDef, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
+import { GATES_DATA, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, rankForLevel, rollGateModifier, rollRarity, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
+import type { BattleState, BattleToast, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -17,16 +17,20 @@ export type FxEvent =
 type Listener = () => void;
 type FxListener = (e: FxEvent) => void;
 
+const POTION_COST = 40;
+
 const INITIAL_STATE: GameState = {
   screen: "title",
   player: {
     name: "Hunter", level: 1, xp: 0, xpToNext: 100,
     hp: 100, maxHp: 100, mp: 30, maxMp: 30,
-    statPoints: 0, str: 10, agi: 10, int: 10, vit: 10, per: 10
+    statPoints: 0, str: 10, agi: 10, int: 10, vit: 10, per: 10,
+    gold: 0, equipment: {}
   },
   gatesCleared: {},
   shadowArmy: [],
   inventory: { potions: 5 },
+  bag: [],
   battle: null
 };
 
@@ -41,6 +45,10 @@ const INITIAL_STATE: GameState = {
  * capped by a solo boss wave. HP/MP carry over between waves within a run.
  * Every wave clear (trash or boss) offers Arise for that wave's monster;
  * "Continue" advances to the next wave, or ends the run on the boss/defeat.
+ *
+ * On top of that: a random modifier is rolled per gate attempt, ~12% of
+ * trash units roll as tougher "Elite" variants, kills can drop loot/gold,
+ * player hits can crit, and one deployed Shadow auto-assists every action.
  */
 export class Game {
   state: GameState = structuredClone(INITIAL_STATE);
@@ -49,6 +57,7 @@ export class Game {
   private vfxSeq = 0;
   private floatSeq = 0;
   private unitSeq = 0;
+  private toastSeq = 0;
 
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -78,26 +87,50 @@ export class Game {
     this.notify();
   }
 
+  /** Base stat + whatever's equipped in every slot that boosts it. */
+  private effectiveStat(key: StatKey): number {
+    const p = this.state.player;
+    let value = p[key];
+    for (const item of Object.values(p.equipment)) {
+      if (item && item.statKey === key) value += item.statBonus;
+    }
+    return value;
+  }
+
+  private rollCrit(): boolean {
+    const chance = Math.min(0.5, 0.08 + this.effectiveStat("agi") * 0.003 + this.effectiveStat("per") * 0.002);
+    return Math.random() < chance;
+  }
+
   // ---- wave/enemy construction ----
 
-  private freshUnit(hp: number, atk: number, def: number, xp: number): EnemyUnit {
+  private freshUnit(hp: number, atk: number, def: number, xp: number, gold: number, isElite: boolean): EnemyUnit {
     this.unitSeq += 1;
     return {
-      uid: `u${this.unitSeq}`, hp, maxHp: hp, atk, def, xp,
+      uid: `u${this.unitSeq}`, hp, maxHp: hp, atk, def, xp, gold, isElite,
       alive: true, hit: false, vfx: null, lunging: false,
       floatText: null, floatId: 0, glow: false
     };
   }
 
-  private makeEnemies(gate: GateDef, entry: WavePlanEntry, trashCount: number): EnemyUnit[] {
+  private makeEnemies(gate: GateDef, entry: WavePlanEntry, trashCount: number, modifier: GateModifier): EnemyUnit[] {
     if (entry.isBoss) {
       const s = statsForBoss(gate);
-      return [this.freshUnit(s.hp, s.atk, s.def, s.xp)];
+      const hp = Math.round(s.hp * modifier.enemyHpMult);
+      const atk = Math.round(s.atk * modifier.enemyAtkMult);
+      const gold = Math.round(s.xp * 0.9);
+      return [this.freshUnit(hp, atk, s.def, s.xp, gold, false)];
     }
     const units: EnemyUnit[] = [];
     for (let i = 0; i < entry.count; i++) {
       const s = statsForUnit(gate, entry.unitStart + i, trashCount);
-      units.push(this.freshUnit(s.hp, s.atk, s.def, s.xp));
+      const isElite = Math.random() < 0.12;
+      const eliteMult = isElite ? 1.6 : 1;
+      const hp = Math.round(s.hp * eliteMult * modifier.enemyHpMult);
+      const atk = Math.round(s.atk * eliteMult * modifier.enemyAtkMult);
+      const xp = Math.round(s.xp * (isElite ? 1.8 : 1));
+      const gold = Math.round(xp * 0.6);
+      units.push(this.freshUnit(hp, atk, s.def, xp, gold, isElite));
     }
     return units;
   }
@@ -106,6 +139,7 @@ export class Game {
     const plan = buildWavePlan(gate);
     const trashCount = totalEnemiesForGate(gate) - 1;
     const entry = plan[0];
+    const modifier = rollGateModifier();
     this.state.player.hp = this.state.player.maxHp;
     this.state.player.mp = this.state.player.maxMp;
     this.state.screen = "battle";
@@ -114,7 +148,8 @@ export class Game {
       enemyName: entry.isBoss ? gate.bossName : gate.monsterName,
       isBossWave: entry.isBoss,
       waveIndex: 1, totalWaves: plan.length,
-      enemies: this.makeEnemies(gate, entry, trashCount),
+      enemies: this.makeEnemies(gate, entry, trashCount, modifier),
+      modifier,
       over: false, result: null, guarding: false, locked: false,
       playerHit: false, skillPanelOpen: false
     };
@@ -131,12 +166,13 @@ export class Game {
     const nextIdx0 = battle.waveIndex; // current waveIndex is 1-based; next 0-based entry is the same number
     if (nextIdx0 >= plan.length) return;
     const entry = plan[nextIdx0];
+    const modifier = battle.modifier ?? rollGateModifier();
     this.state.battle = {
       ...battle,
       waveIndex: battle.waveIndex + 1,
       isBossWave: entry.isBoss,
       enemyName: entry.isBoss ? gate.bossName : gate.monsterName,
-      enemies: this.makeEnemies(gate, entry, trashCount),
+      enemies: this.makeEnemies(gate, entry, trashCount, modifier),
       over: false, result: null, locked: false, guarding: false,
       playerHit: false, skillPanelOpen: false,
       vfxPlayer: null, guardRing: false, lunge: null, flash: false,
@@ -251,6 +287,20 @@ export class Game {
     }, 450);
   }
 
+  private showBattleToast(battle: BattleState, toast: BattleToast) {
+    battle.toast = toast;
+    this.toastSeq += 1;
+    const id = this.toastSeq;
+    battle.toastId = id;
+    setTimeout(() => {
+      const b = this.state.battle;
+      if (b && b.toastId === id) {
+        this.state.battle = { ...b, toast: null };
+        this.notify();
+      }
+    }, 1500);
+  }
+
   /** Adds XP, rolling over levels (each grants stat points + a full
    *  heal - a welcome mid-run second wind). Returns whether a level-up
    *  happened. */
@@ -271,18 +321,53 @@ export class Game {
     return leveled;
   }
 
-  /** Applies damage to one enemy unit; grants its XP and fires the
-   *  dissolve fx if it dies. */
-  private applyDamage(battle: BattleState, unit: EnemyUnit, dmg: number) {
+  /** Gold + a chance at loot on a kill. Elites, bosses, and "generous"
+   *  gate modifiers all push the odds and rarity up. */
+  private grantKillRewards(battle: BattleState, unit: EnemyUnit) {
+    if (unit.gold > 0) {
+      this.state.player = { ...this.state.player, gold: this.state.player.gold + unit.gold };
+    }
+
+    const modifier = battle.modifier;
+    const lootBonus = (modifier?.loot ?? 0) + (unit.isElite ? 0.35 : 0) + (battle.isBossWave ? 1 : 0);
+    const baseChance = battle.isBossWave ? 1 : 0.22;
+    const chance = Math.min(1, baseChance + lootBonus);
+    if (Math.random() >= chance) return;
+
+    const rarityBonus = (unit.isElite ? 0.15 : 0) + (battle.isBossWave ? 0.3 : 0);
+    const rarity = rollRarity(rarityBonus);
+    const gate = GATES_DATA.find((g) => g.id === battle.gateId);
+    const item = generateLoot(gate?.rank ?? "E", rarity);
+    this.state.bag = [...this.state.bag, item];
+    this.showBattleToast(battle, { text: item.name, kind: "loot", rarity });
+  }
+
+  /** Applies damage to one enemy unit; grants its XP/gold/loot and fires
+   *  the dissolve fx if it dies. */
+  private applyDamage(battle: BattleState, unit: EnemyUnit, dmg: number, isCrit = false) {
     unit.hp = Math.max(0, unit.hp - dmg);
     unit.hit = true;
-    this.triggerUnitFloat(unit, `-${dmg}`, "dmg");
+    this.triggerUnitFloat(unit, `-${dmg}`, isCrit ? "crit" : "dmg");
     if (unit.hp <= 0 && unit.alive) {
       unit.alive = false;
-      const leveled = this.grantXp(unit.xp);
+      const leveled = this.grantXp(Math.round(unit.xp * (battle.modifier?.xpMult ?? 1)));
       if (leveled) this.emitFx({ kind: "levelup" });
       this.emitFx({ kind: "dissolve", side: "enemy", targetUid: unit.uid });
+      this.grantKillRewards(battle, unit);
     }
+  }
+
+  /** A deployed Shadow auto-assists every player action, striking whatever
+   *  is currently targeted right after the player's own hit lands. */
+  private companionStrike(battle: BattleState) {
+    const shadow = this.state.shadowArmy.find((s) => s.deployed);
+    if (!shadow) return;
+    const target = this.currentTarget(battle);
+    if (!target) return;
+    const dmg = Math.max(1, Math.round(shadow.power + (Math.random() * 4 - 2) - target.def * 0.5));
+    this.setUnitVfx(target, "slash");
+    this.applyDamage(battle, target, dmg);
+    this.clearHitFlagLater(target.uid);
   }
 
   private onWaveCleared(battle: BattleState) {
@@ -367,10 +452,13 @@ export class Game {
     const target = this.currentTarget(battle);
     if (!target) return;
     battle.locked = true;
-    const dmg = Math.max(1, Math.round(6 + this.state.player.str * 1.1 - target.def + (Math.random() * 4 - 2)));
-    this.playPlayerVfx(battle, { lunge: "player", flash: true });
-    this.setUnitVfx(target, "slash");
-    this.applyDamage(battle, target, dmg);
+    const isCrit = this.rollCrit();
+    let dmg = Math.max(1, Math.round(6 + this.effectiveStat("str") * 1.1 - target.def + (Math.random() * 4 - 2)));
+    if (isCrit) dmg = Math.round(dmg * 1.8);
+    this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy: isCrit });
+    this.setUnitVfx(target, isCrit ? "flurry" : "slash");
+    this.applyDamage(battle, target, dmg, isCrit);
+    this.companionStrike(battle);
     this.state.battle = battle;
     this.notify();
     this.clearHitFlagLater(target.uid);
@@ -393,6 +481,7 @@ export class Game {
     battle.locked = true;
 
     const player = { ...this.state.player, mp: this.state.player.mp - skillDef.mpCost };
+    const str = this.effectiveStat("str");
 
     let targets: EnemyUnit[];
     let heavy = false;
@@ -405,12 +494,15 @@ export class Game {
 
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy });
     for (const target of targets) {
-      let dmg = Math.max(1, Math.round(skillDef.base + player.str * skillDef.scale - target.def + (Math.random() * 4 - 2)));
+      const isCrit = this.rollCrit();
+      let dmg = Math.max(1, Math.round(skillDef.base + str * skillDef.scale - target.def + (Math.random() * 4 - 2)));
       if (skillDef.kind === "execute" && target.hp <= target.maxHp * 0.3) dmg *= 2;
-      this.setUnitVfx(target, skillDef.kind === "single" ? "slash" : "flurry");
-      this.applyDamage(battle, target, dmg);
+      if (isCrit) dmg = Math.round(dmg * 1.8);
+      this.setUnitVfx(target, skillDef.kind === "single" && !isCrit ? "slash" : "flurry");
+      this.applyDamage(battle, target, dmg, isCrit);
       this.clearHitFlagLater(target.uid);
     }
+    this.companionStrike(battle);
 
     this.state.battle = battle;
     this.state.player = player;
@@ -459,11 +551,14 @@ export class Game {
   ariseShadow() {
     const battle = this.state.battle;
     if (!battle || (battle.result !== "wave-clear" && battle.result !== "gate-clear")) return;
+    const rank = rankForLevel(this.state.player.level);
     const shadow = {
       id: `${battle.gateId}-w${battle.waveIndex}-${Date.now()}`,
       name: `Shadow of the ${battle.enemyName}`,
-      rank: rankForLevel(this.state.player.level),
-      type: battle.monsterKey
+      rank,
+      type: battle.monsterKey,
+      power: SHADOW_RANK_POWER[rank],
+      deployed: false
     };
     this.emitFx({ kind: "portal" });
     this.state.shadowArmy = [...this.state.shadowArmy, shadow];
@@ -477,6 +572,13 @@ export class Game {
     } else {
       setTimeout(() => this.advanceWave(), 650);
     }
+  }
+
+  /** Only one Shadow assists in battle at a time - deploying a new one
+   *  automatically recalls whichever was active before. */
+  deployShadow(id: string) {
+    this.state.shadowArmy = this.state.shadowArmy.map((s) => ({ ...s, deployed: s.id === id ? !s.deployed : false }));
+    this.notify();
   }
 
   continueAfterWave() {
@@ -502,6 +604,47 @@ export class Game {
     player.statPoints -= 1;
     this.state.player = player;
     this.notify();
+  }
+
+  // ---- inventory / equipment ----
+
+  equipItem(itemId: string) {
+    const item = this.state.bag.find((i) => i.id === itemId);
+    if (!item) return;
+    const player = { ...this.state.player, equipment: { ...this.state.player.equipment } };
+    const previous = player.equipment[item.slot];
+    player.equipment[item.slot] = item;
+    let bag = this.state.bag.filter((i) => i.id !== itemId);
+    if (previous) bag = [...bag, previous];
+    this.state.player = player;
+    this.state.bag = bag;
+    this.notify();
+  }
+
+  unequipItem(slot: ItemSlot) {
+    const player = { ...this.state.player, equipment: { ...this.state.player.equipment } };
+    const item = player.equipment[slot];
+    if (!item) return;
+    delete player.equipment[slot];
+    this.state.player = player;
+    this.state.bag = [...this.state.bag, item];
+    this.notify();
+  }
+
+  discardItem(itemId: string) {
+    this.state.bag = this.state.bag.filter((i) => i.id !== itemId);
+    this.notify();
+  }
+
+  buyPotion() {
+    if (this.state.player.gold < POTION_COST) return;
+    this.state.player = { ...this.state.player, gold: this.state.player.gold - POTION_COST };
+    this.state.inventory = { ...this.state.inventory, potions: this.state.inventory.potions + 1 };
+    this.notify();
+  }
+
+  get potionCost(): number {
+    return POTION_COST;
   }
 
   get gates(): GateDef[] {

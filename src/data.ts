@@ -1,4 +1,4 @@
-import type { EquipmentItem, GateDef, Rank, SkillDef, WavePlanEntry } from "./types";
+import type { GateDef, GateModifier, ItemRarity, ItemSlot, LootItem, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
 
 /** Ported from the Hunter Protocol design file; extended with a boss name
  *  per gate for the multi-wave encounter system (see buildWavePlan /
@@ -87,11 +87,96 @@ export function rankForLevel(level: number): Rank {
   return "E";
 }
 
-export const EQUIPMENT: EquipmentItem[] = [
-  { icon: "sword", name: "Dagger of the Depths", slot: "Weapon", bonus: "+8 STR" },
-  { icon: "shield-checkered", name: "Reinforced Leather", slot: "Armor", bonus: "+6 VIT" },
-  { icon: "circle-dashed", name: "Band of Focus", slot: "Ring", bonus: "+4 PER" }
+/** Every gate/rank an item can drop scaled against - keeps loot power in
+ *  step with how far into the game (E->S) it dropped. */
+const RANK_INDEX: Record<Rank, number> = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5 };
+
+export const RARITY_META: Record<ItemRarity, { label: string; color: string; weight: number; statMult: number }> = {
+  common: { label: "Common", color: "#9397ab", weight: 0.55, statMult: 1 },
+  rare: { label: "Rare", color: "#968ae0", weight: 0.3, statMult: 1.7 },
+  epic: { label: "Epic", color: "#d2cefd", weight: 0.12, statMult: 2.6 },
+  legendary: { label: "Legendary", color: "#f5c451", weight: 0.03, statMult: 4 }
+};
+
+const SLOT_ICON: Record<ItemSlot, string> = {
+  weapon: "sword", armor: "shield-checkered", ring: "circle-dashed", amulet: "moon-stars"
+};
+const SLOT_BASES: Record<ItemSlot, string[]> = {
+  weapon: ["Dagger", "Blade", "Fang", "Cleaver", "Piercer"],
+  armor: ["Leather", "Mail", "Plate", "Cloak", "Hide"],
+  ring: ["Band", "Loop", "Signet", "Ring"],
+  amulet: ["Amulet", "Pendant", "Talisman", "Charm"]
+};
+const STAT_PREFIX: Record<StatKey, string[]> = {
+  str: ["Brutal", "Savage", "Cruel"],
+  agi: ["Swift", "Nimble", "Fleet"],
+  int: ["Arcane", "Runic", "Mystic"],
+  vit: ["Sturdy", "Vital", "Stalwart"],
+  per: ["Keen", "Watchful", "Sharp"]
+};
+const SUFFIXES = ["of the Depths", "of the Hunt", "of Shadows", "of the Wolf", "of Ruin"];
+const RARE_SUFFIXES = ["of the Abyss", "of the Monarch", "of the Void", "of Eternity", "of the Fallen"];
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+export function rollRarity(bonus = 0): ItemRarity {
+  const weights: [ItemRarity, number][] = [
+    ["legendary", RARITY_META.legendary.weight + bonus * 0.5],
+    ["epic", RARITY_META.epic.weight + bonus * 0.8],
+    ["rare", RARITY_META.rare.weight + bonus],
+    ["common", RARITY_META.common.weight]
+  ];
+  const total = weights.reduce((sum, [, w]) => sum + Math.max(0, w), 0);
+  let roll = Math.random() * total;
+  for (const [rarity, w] of weights) {
+    roll -= Math.max(0, w);
+    if (roll <= 0) return rarity;
+  }
+  return "common";
+}
+
+/** Generates a fully-named, ready-to-equip item. `rank` scales its base
+ *  power, `rarity` scales the multiplier and unlocks the dramatic suffix
+ *  pool at epic+. */
+export function generateLoot(rank: Rank, rarity: ItemRarity): LootItem {
+  const slot = pick<ItemSlot>(["weapon", "armor", "ring", "amulet"]);
+  const statKey = pick<StatKey>(["str", "agi", "int", "vit", "per"]);
+  const base = pick(SLOT_BASES[slot]);
+  const prefix = pick(STAT_PREFIX[statKey]);
+  const useDramaticSuffix = rarity === "epic" || rarity === "legendary";
+  const suffix = Math.random() < 0.7 ? pick(useDramaticSuffix ? RARE_SUFFIXES : SUFFIXES) : "";
+  const name = suffix ? `${prefix} ${base} ${suffix}` : `${prefix} ${base}`;
+  const rankPower = 3 + RANK_INDEX[rank] * 2;
+  const statBonus = Math.max(1, Math.round(rankPower * RARITY_META[rarity].statMult));
+  return {
+    id: `item-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    name, slot, rarity, statKey, statBonus,
+    icon: SLOT_ICON[slot]
+  };
+}
+
+/** Rolled once per gate run - swaps up the risk/reward on every attempt
+ *  instead of the same fight playing out identically each time. */
+export const GATE_MODIFIERS: GateModifier[] = [
+  { key: "none", label: "", description: "", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 1 },
+  { key: "blessed", label: "Blessed Gate", description: "+50% XP from every kill", xpMult: 1.5, loot: 0, enemyAtkMult: 1, enemyHpMult: 1 },
+  { key: "bountiful", label: "Bountiful Gate", description: "Much higher loot drop chance", xpMult: 1, loot: 0.25, enemyAtkMult: 1, enemyHpMult: 1 },
+  { key: "vicious", label: "Vicious Gate", description: "Enemies hit harder, but drop more loot", xpMult: 1, loot: 0.15, enemyAtkMult: 1.35, enemyHpMult: 1 },
+  { key: "swift", label: "Swift Gate", description: "Enemies are frailer than usual", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 0.75 }
 ];
+
+export function rollGateModifier(): GateModifier {
+  // ~40% chance of an ordinary run with no modifier at all.
+  if (Math.random() < 0.4) return GATE_MODIFIERS[0];
+  return pick(GATE_MODIFIERS.slice(1));
+}
+
+/** How hard a deployed Shadow hits per player action, by its rank. */
+export const SHADOW_RANK_POWER: Record<Rank, number> = {
+  E: 3, D: 5, C: 8, B: 12, A: 18, S: 26
+};
 
 export const STAT_DEFS: { key: "str" | "agi" | "int" | "vit" | "per"; label: string }[] = [
   { key: "str", label: "STR — Strength" },

@@ -19,6 +19,8 @@ export interface PlayerState {
   int: number;
   vit: number;
   per: number;
+  gold: number;
+  equipment: Partial<Record<ItemSlot, LootItem>>;
 }
 
 export interface GateDef {
@@ -40,11 +42,17 @@ export interface WavePlanEntry {
   unitStart: number; // global trash-unit index this wave starts at (for stat ramp)
 }
 
-export interface EquipmentItem {
-  icon: string;
+export type ItemRarity = "common" | "rare" | "epic" | "legendary";
+export type ItemSlot = "weapon" | "armor" | "ring" | "amulet";
+
+export interface LootItem {
+  id: string;
   name: string;
-  slot: string;
-  bonus: string;
+  slot: ItemSlot;
+  rarity: ItemRarity;
+  statKey: StatKey;
+  statBonus: number;
+  icon: string;
 }
 
 export interface ShadowRecord {
@@ -52,6 +60,20 @@ export interface ShadowRecord {
   name: string;
   rank: Rank;
   type: string;
+  power: number;
+  deployed: boolean;
+}
+
+/** Rolled once when a gate run starts - a random modifier that makes each
+ *  attempt at the same gate feel different, not a fixed grind. */
+export interface GateModifier {
+  key: string;
+  label: string;
+  description: string;
+  xpMult: number;
+  loot: number; // additive to base loot-drop chance
+  enemyAtkMult: number;
+  enemyHpMult: number;
 }
 
 export type SkillKind = "single" | "cleave" | "execute" | "aoe";
@@ -70,7 +92,7 @@ export interface SkillDef {
 
 export type VfxKind = "slash" | "flurry" | null;
 export type LungeSide = "player" | null;
-export type FloatKind = "dmg" | "heal";
+export type FloatKind = "dmg" | "heal" | "crit";
 
 export interface FloatText {
   text: string;
@@ -79,7 +101,8 @@ export interface FloatText {
 
 /** One enemy within the current wave's group. Non-boss waves share a name
  *  (battle.enemyName) and portrait (battle.monsterKey) - only their rolled
- *  stats differ - so per-unit state only needs to track combat state. */
+ *  stats and elite status differ - so per-unit state only needs to track
+ *  combat state. */
 export interface EnemyUnit {
   uid: string;
   hp: number;
@@ -87,6 +110,8 @@ export interface EnemyUnit {
   atk: number;
   def: number;
   xp: number;
+  gold: number;
+  isElite: boolean;
   alive: boolean;
   hit: boolean;
   vfx: VfxKind;
@@ -94,6 +119,12 @@ export interface EnemyUnit {
   floatText: FloatText | null;
   floatId: number;
   glow: boolean;
+}
+
+export interface BattleToast {
+  text: string;
+  kind: "loot" | "gold" | "info";
+  rarity?: ItemRarity;
 }
 
 export type BattleResult = "wave-clear" | "gate-clear" | "defeat" | null;
@@ -107,6 +138,7 @@ export interface BattleState {
   waveIndex: number; // 1-based
   totalWaves: number;
   enemies: EnemyUnit[];
+  modifier: GateModifier | null;
 
   over: boolean;
   result: BattleResult;
@@ -124,6 +156,9 @@ export interface BattleState {
   floatPlayer?: FloatText | null;
   floatPlayerId?: number;
   playerGlow?: boolean;
+
+  toast?: BattleToast | null;
+  toastId?: number;
 }
 
 export interface GameState {
@@ -132,5 +167,6 @@ export interface GameState {
   gatesCleared: Record<string, boolean>;
   shadowArmy: ShadowRecord[];
   inventory: { potions: number };
+  bag: LootItem[];
   battle: BattleState | null;
 }
