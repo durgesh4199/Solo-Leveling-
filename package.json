@@ -9,6 +9,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
+    "play": "vite preview --open --port 4173",
+    "play:web": "npm run build && npm run play",
     "electron:dev": "npm run build && electron .",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:linux": "npm run build && electron-builder --linux",

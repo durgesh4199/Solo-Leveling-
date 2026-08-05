@@ -76,15 +76,31 @@ lets you download the results from the workflow run's **Artifacts** section
 ## Getting started
 
 ```bash
+git clone <this-repo-url>
+cd Solo-Leveling-
 npm install
 npm run dev        # Vite dev server with hot reload, http://localhost:5173
 ```
+
+## One-click: build + play the web version
+
+After cloning, you don't need to run separate install/build/serve commands —
+one script does all three and opens the game in your browser:
+
+- **Windows:** double-click `play-web.bat` (or run it from a terminal)
+- **macOS / Linux:** run `./play-web.sh` in a terminal (first time: `chmod +x play-web.sh`)
+
+Either script installs dependencies if needed, builds the production bundle,
+starts a local server, and opens `http://localhost:4173/` for you. Leave the
+terminal window open while you play — closing it stops the server. This is
+also just `npm run play:web` if you'd rather type the npm command directly.
 
 ## Building for Web
 
 ```bash
 npm run build       # outputs static site to dist/
 npm run preview      # serve the production build locally to sanity-check it
+npm run play         # like preview, but also opens it in your default browser
 ```
 
 Deploy `dist/` to any static host (Netlify, Vercel, GitHub Pages, S3, etc.).
