@@ -98,7 +98,11 @@
 /* Shader FX canvas overlay — spans the whole arena row, sits above every
    portrait/CSS-vfx layer so shader slashes/particles read as "extra" flair. */
 .arena-row { position: relative; }
-.fx-canvas { position: absolute; inset: -70px -10px; z-index: 5; pointer-events: none; width: calc(100% + 20px); height: calc(100% + 140px); }
+/* Asymmetric overflow: generous room above for portal/level-up bursts that
+   bloom upward, but only a little below - the old symmetric -70px/-70px
+   let big effects bleed down through the arena's bottom padding into the
+   Hunter HP/MP panel right underneath it, visually smearing across both. */
+.fx-canvas { position: absolute; top: -90px; right: -10px; bottom: -15px; left: -10px; z-index: 5; pointer-events: none; }
 
 /* Whole-arena shake, driven by the shader FX layer (JS toggles this class). */
 @keyframes arenaShake { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(-6px, 2px); } 40% { transform: translate(5px, -2px); } 60% { transform: translate(-4px, 1px); } 80% { transform: translate(3px, -1px); } }
