@@ -3,7 +3,7 @@ import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { enemyPortrait, hunterPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
-import { SKILLS } from "../data";
+import { RARITY_META, SKILLS } from "../data";
 import type { EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
@@ -20,9 +20,10 @@ function center(canvas: HTMLElement, target: HTMLElement) {
 function enemySlotHtml(unit: EnemyUnit, art: string, isBoss: boolean, small: boolean): string {
   return `
     <div class="enemy-slot" data-uid="${unit.uid}" style="display:flex;flex-direction:column;align-items:center;gap:4px;">
-      <div class="arena-portrait ${isBoss ? "is-boss" : ""} ${small ? "small" : ""}">
+      <div class="arena-portrait ${isBoss ? "is-boss" : ""} ${unit.isElite ? "is-elite" : ""} ${small ? "small" : ""}">
         <div class="impact-glow"></div>
         <div class="art-slot lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${art}</div>
+        ${unit.isElite ? `<div class="elite-badge">${icon("sparkles")}</div>` : ""}
         <div class="vfx-layer" style="display:none;">
           <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
           <div class="flurry-flare" style="display:none;"></div>
@@ -45,11 +46,16 @@ export const battleScreen: ScreenModule = (root, game) => {
     <div style="flex:1;display:flex;flex-direction:column;min-height:0;position:relative;background:radial-gradient(120% 80% at 50% 0%, var(--color-section-glow) 0%, var(--color-bg) 60%);">
       <div style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-4) var(--space-6) 0;">
         <button class="btn btn-icon" data-action="retreat-battle">${icon("arrow-left")}</button>
-        <div id="battle-gate-name" style="font-size:13px;color:var(--color-neutral-400);flex:1;"></div>
+        <div style="flex:1;min-width:0;">
+          <div id="battle-gate-name" style="font-size:13px;color:var(--color-neutral-400);"></div>
+          <div id="modifier-tag" style="font-size:10px;color:var(--color-accent-300);display:none;"></div>
+        </div>
         <div id="wave-progress" style="font-size:11px;color:var(--color-neutral-500);letter-spacing:0.04em;"></div>
       </div>
 
-      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:var(--space-4) var(--space-6);gap:var(--space-4);min-height:0;">
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:var(--space-4) var(--space-6);gap:var(--space-4);min-height:0;position:relative;">
+        <div id="battle-toast" style="display:none;position:absolute;top:2px;left:50%;transform:translateX(-50%);z-index:10;padding:5px 12px;border-radius:999px;background:var(--color-surface);border:1px solid var(--color-neutral-800);font-size:12px;font-weight:500;white-space:nowrap;box-shadow:var(--shadow-md);"></div>
+
         <div style="display:flex;align-items:center;gap:6px;">
           <div id="enemy-name" style="font-size:15px;font-weight:500;"></div>
           <span id="boss-tag" class="tag tag-accent" style="display:none;flex-shrink:0;">BOSS</span>
@@ -62,6 +68,7 @@ export const battleScreen: ScreenModule = (root, game) => {
           <div id="player-portrait" class="arena-portrait">
             <div id="player-glow" class="impact-glow"></div>
             <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait()}</div>
+            <div id="shadow-badge" style="display:none;" title="Deployed Shadow assisting">${icon("ghost")}</div>
             <div id="player-vfx" class="vfx-layer" style="display:none;">
               <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
             </div>
@@ -119,6 +126,9 @@ export const battleScreen: ScreenModule = (root, game) => {
 
   const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
   const gateNameEl = $("#battle-gate-name");
+  const modifierTagEl = $("#modifier-tag");
+  const battleToastEl = $("#battle-toast");
+  const shadowBadgeEl = $("#shadow-badge");
   const waveProgressEl = $("#wave-progress");
   const enemyNameEl = $("#enemy-name");
   const bossTag = $("#boss-tag");
@@ -240,6 +250,26 @@ export const battleScreen: ScreenModule = (root, game) => {
     if (!b) return;
 
     gateNameEl.textContent = b.gateName;
+    if (b.modifier && b.modifier.key !== "none") {
+      modifierTagEl.textContent = b.modifier.label;
+      modifierTagEl.title = b.modifier.description;
+      modifierTagEl.style.display = "block";
+    } else {
+      modifierTagEl.style.display = "none";
+    }
+
+    if (b.toast) {
+      const color = b.toast.kind === "gold" ? "#f5c451" : b.toast.rarity ? RARITY_META[b.toast.rarity].color : "var(--color-accent-300)";
+      battleToastEl.textContent = b.toast.kind === "loot" ? `Found: ${b.toast.text}` : b.toast.text;
+      battleToastEl.style.color = color;
+      battleToastEl.style.borderColor = color;
+      battleToastEl.style.display = "block";
+    } else {
+      battleToastEl.style.display = "none";
+    }
+
+    shadowBadgeEl.style.display = game.state.shadowArmy.some((s) => s.deployed) ? "flex" : "none";
+
     waveProgressEl.textContent = b.isBossWave ? "FINAL WAVE" : `WAVE ${b.waveIndex} / ${b.totalWaves}`;
     const aliveCount = b.enemies.filter((u) => u.alive).length;
     enemyNameEl.textContent = b.enemies.length > 1 ? `${b.enemyName} ×${aliveCount}` : b.enemyName;

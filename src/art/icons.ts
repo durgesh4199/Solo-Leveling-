@@ -20,7 +20,10 @@ const ICONS: Record<string, string> = {
   "caret-right": '<path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   "arrow-left": '<path d="M19 12H5M11 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
   lightning: '<path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="currentColor"/>',
-  flame: '<path d="M12 2c1 3-2 4-2 7a4 4 0 0 0 8 0c1.5 1.5 2 3.4 2 5a8 8 0 1 1-16 0c0-4 2-5 3-8 .5 2 1.5 2.5 2 1.5C10 5 11 3 12 2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'
+  flame: '<path d="M12 2c1 3-2 4-2 7a4 4 0 0 0 8 0c1.5 1.5 2 3.4 2 5a8 8 0 1 1-16 0c0-4 2-5 3-8 .5 2 1.5 2.5 2 1.5C10 5 11 3 12 2Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  coin: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="5.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="1.6 2"/>',
+  sparkles: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  trash: '<path d="M5 7h14M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
 };
 
 export function icon(name: keyof typeof ICONS, size = "1em"): string {
