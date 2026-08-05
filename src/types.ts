@@ -26,6 +26,7 @@ export interface GateDef {
   rank: Rank;
   name: string;
   monsterName: string;
+  bossName: string;
   recommendedLevel: number;
   baseHp: number;
   baseAtk: number;
@@ -56,23 +57,21 @@ export interface FloatText {
   kind: FloatKind;
 }
 
-export interface LogEntry {
-  id: number;
-  text: string;
-}
-
 export type BattleResult = "victory" | "defeat" | null;
 
 export interface BattleState {
   gateId: string;
   gateName: string;
-  enemyName: string;
+  monsterKey: string; // base monster type for this gate - used to pick portrait art
+  enemyName: string;  // display name; the boss wave gets the gate's bossName
   enemyHp: number;
   enemyMaxHp: number;
   enemyAtk: number;
   enemyDef: number;
   xpReward: number;
-  log: LogEntry[];
+  waveIndex: number; // 1-based
+  totalWaves: number;
+  isBoss: boolean;
   over: boolean;
   result: BattleResult;
   guarding: boolean;

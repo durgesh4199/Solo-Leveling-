@@ -27,14 +27,18 @@ export const battleScreen: ScreenModule = (root, game) => {
     <div style="flex:1;display:flex;flex-direction:column;min-height:0;background:radial-gradient(120% 80% at 50% 0%, var(--color-section-glow) 0%, var(--color-bg) 60%);">
       <div style="display:flex;align-items:center;gap:var(--space-2);padding:var(--space-4) var(--space-6) 0;">
         <button class="btn btn-icon" data-action="retreat-battle">${icon("arrow-left")}</button>
-        <div id="battle-gate-name" style="font-size:13px;color:var(--color-neutral-400);"></div>
+        <div id="battle-gate-name" style="font-size:13px;color:var(--color-neutral-400);flex:1;"></div>
+        <div id="wave-progress" style="font-size:11px;color:var(--color-neutral-500);letter-spacing:0.04em;"></div>
       </div>
 
       <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:var(--space-4) var(--space-6);gap:var(--space-4);min-height:0;">
         <div>
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-            <div id="enemy-name" style="font-size:15px;font-weight:500;"></div>
-            <div id="enemy-hp-text" style="font-size:11px;color:var(--color-neutral-500);"></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;gap:var(--space-2);">
+            <div style="display:flex;align-items:baseline;gap:6px;min-width:0;">
+              <div id="enemy-name" style="font-size:15px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+              <span id="boss-tag" class="tag tag-accent" style="display:none;flex-shrink:0;">BOSS</span>
+            </div>
+            <div id="enemy-hp-text" style="font-size:11px;color:var(--color-neutral-500);flex-shrink:0;"></div>
           </div>
           <div id="enemy-hp-track" class="bar-track"><div id="enemy-hp-fill" class="bar-fill" style="background:var(--color-neutral-400);"></div></div>
         </div>
@@ -57,7 +61,7 @@ export const battleScreen: ScreenModule = (root, game) => {
 
           <div id="enemy-portrait" class="arena-portrait">
             <div id="enemy-glow" class="impact-glow"></div>
-            <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${enemyPortrait(battle.enemyName)}</div>
+            <div id="enemy-art-slot" class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${enemyPortrait(battle.monsterKey)}</div>
             <div id="enemy-vfx" class="vfx-layer" style="display:none;">
               <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
               <div id="enemy-flare" class="flurry-flare" style="display:none;"></div>
@@ -66,8 +70,6 @@ export const battleScreen: ScreenModule = (root, game) => {
           </div>
         </div>
       </div>
-
-      <div id="battle-log" style="flex:0 0 74px;margin:0 var(--space-6);background:var(--color-neutral-900);border-radius:var(--radius-md);padding:var(--space-2) var(--space-3);overflow-y:auto;display:flex;flex-direction:column-reverse;gap:var(--space-1);"></div>
 
       <div style="padding:var(--space-4) var(--space-6);">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
@@ -100,7 +102,9 @@ export const battleScreen: ScreenModule = (root, game) => {
 
   const $ = <T extends HTMLElement = HTMLElement>(sel: string) => root.querySelector<T>(sel)!;
   const gateNameEl = $("#battle-gate-name");
+  const waveProgressEl = $("#wave-progress");
   const enemyNameEl = $("#enemy-name");
+  const bossTag = $("#boss-tag");
   const enemyHpText = $("#enemy-hp-text");
   const enemyHpFill = $("#enemy-hp-fill");
   const enemyHpTrack = $("#enemy-hp-track");
@@ -122,6 +126,7 @@ export const battleScreen: ScreenModule = (root, game) => {
 
   const playerPortrait = $("#player-portrait");
   const enemyPortraitEl = $("#enemy-portrait");
+  const enemyArtSlot = $("#enemy-art-slot");
   const playerGlow = $("#player-glow");
   const enemyGlow = $("#enemy-glow");
   const playerVfx = $("#player-vfx");
@@ -132,7 +137,6 @@ export const battleScreen: ScreenModule = (root, game) => {
   const enemyFloat = $("#enemy-float");
   const arenaFlash = $("#arena-flash");
   const arenaRow = $(".arena-row");
-  const logEl = $("#battle-log");
   const fxCanvas = $<HTMLCanvasElement>("#fx-canvas");
 
   const shaderFx = new ShaderFX(fxCanvas);
@@ -151,8 +155,6 @@ export const battleScreen: ScreenModule = (root, game) => {
       }
     });
   });
-
-  let renderedLogLen = -1;
 
   const unsubFx = game.onFx((e) => {
     switch (e.kind) {
@@ -195,16 +197,27 @@ export const battleScreen: ScreenModule = (root, game) => {
     }
   });
 
+  let renderedWaveKey = "";
+
   const update = () => {
     const b = game.state.battle;
     const p = game.state.player;
     if (!b) return;
 
     gateNameEl.textContent = b.gateName;
+    waveProgressEl.textContent = b.isBoss ? "FINAL WAVE" : `WAVE ${b.waveIndex} / ${b.totalWaves}`;
     enemyNameEl.textContent = b.enemyName;
+    bossTag.style.display = b.isBoss ? "inline-flex" : "none";
     enemyHpText.textContent = `${b.enemyHp} / ${b.enemyMaxHp}`;
     enemyHpFill.style.width = `${Math.round((b.enemyHp / b.enemyMaxHp) * 100)}%`;
     enemyHpTrack.classList.toggle("hit", !!b.enemyHit);
+
+    const waveKey = `${b.gateId}:${b.waveIndex}`;
+    if (waveKey !== renderedWaveKey) {
+      renderedWaveKey = waveKey;
+      enemyArtSlot.innerHTML = enemyPortrait(b.monsterKey);
+      enemyPortraitEl.classList.toggle("is-boss", b.isBoss);
+    }
 
     playerNameEl.textContent = p.name;
     playerHpText.textContent = `${p.hp} / ${p.maxHp} HP`;
@@ -249,20 +262,13 @@ export const battleScreen: ScreenModule = (root, game) => {
       enemyFloat.style.display = "none";
     }
 
-    if (b.log.length !== renderedLogLen) {
-      renderedLogLen = b.log.length;
-      logEl.innerHTML = [...b.log].reverse()
-        .map((entry) => `<div class="log-line" style="font-size:12px;color:var(--color-neutral-300);">${entry.text}</div>`)
-        .join("");
-    }
-
     if (b.over) {
       actionsRow.style.display = "none";
       resultPanel.style.display = "flex";
       const victory = b.result === "victory";
       resultTitle.textContent = victory ? "Victory" : "You Fell";
       resultTitle.style.color = victory ? "var(--color-accent-300)" : "var(--color-neutral-400)";
-      resultSubtitle.textContent = victory ? `+${b.xpReward} XP earned` : "Retreat and recover before trying again.";
+      resultSubtitle.textContent = victory ? "Gate cleared - the boss has fallen." : "Retreat and recover before trying again.";
       ariseBtn.style.display = victory ? "inline-flex" : "none";
     } else {
       actionsRow.style.display = "grid";

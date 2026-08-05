@@ -1,4 +1,4 @@
-import { GATES_DATA, rankForLevel } from "./data";
+import { GATES_DATA, rankForLevel, statsForWave, waveCountForGate } from "./data";
 import type { BattleState, GameState, GateDef, StatKey } from "./types";
 
 /** Events the shader/particle FX layer cares about, separate from the
@@ -29,11 +29,16 @@ const INITIAL_STATE: GameState = {
 };
 
 /**
- * Central game state + all mutating actions, ported from the design file's
- * Component class. Plain observer pattern: mutate `state`, call `notify()`,
- * the renderer re-reads state and updates the DOM. No vdom/diffing — screens
- * do targeted DOM updates so CSS keyframe animations never get interrupted
- * by node recreation.
+ * Central game state + all mutating actions. Plain observer pattern:
+ * mutate `state`, call `notify()`, the renderer re-reads state and updates
+ * the DOM. No vdom/diffing - screens do targeted DOM updates so CSS
+ * keyframe animations never get interrupted by node recreation.
+ *
+ * Each gate is a run of several waves (see data.ts): easier trash enemies
+ * first, escalating stats, a boss on the final wave. HP/MP carry over
+ * between waves within one gate run (only refilled when a level-up happens
+ * or you start a fresh gate) - only the boss kill ends the run and offers
+ * Arise.
  */
 export class Game {
   state: GameState = structuredClone(INITIAL_STATE);
@@ -71,22 +76,20 @@ export class Game {
   }
 
   startBattle(gate: GateDef) {
-    const enemyHp = gate.baseHp;
+    const totalWaves = waveCountForGate(gate);
+    const wave1 = statsForWave(gate, 1, totalWaves);
+    this.state.player.hp = this.state.player.maxHp;
+    this.state.player.mp = this.state.player.maxMp;
     this.state.screen = "battle";
     this.state.battle = {
-      gateId: gate.id, gateName: gate.name, enemyName: gate.monsterName,
-      enemyHp, enemyMaxHp: enemyHp, enemyAtk: gate.baseAtk, enemyDef: gate.baseDef,
-      xpReward: gate.xp,
-      log: [{ id: 0, text: `A ${gate.monsterName} blocks your path.` }],
+      gateId: gate.id, gateName: gate.name, monsterKey: gate.monsterName,
+      enemyName: wave1.name, enemyHp: wave1.hp, enemyMaxHp: wave1.hp,
+      enemyAtk: wave1.atk, enemyDef: wave1.def, xpReward: wave1.xp,
+      waveIndex: 1, totalWaves, isBoss: totalWaves === 1,
       over: false, result: null, guarding: false, locked: false,
       enemyHit: false, playerHit: false
     };
     this.notify();
-  }
-
-  private addLog(battle: BattleState, text: string) {
-    const id = (battle.log[battle.log.length - 1]?.id ?? 0) + 1;
-    battle.log = [...battle.log, { id, text }];
   }
 
   private playVfx(battle: BattleState, opts: { enemy?: "slash" | "flurry"; player?: "slash" | "flurry"; guard?: boolean; lunge?: "player" | "enemy"; flash?: boolean }) {
@@ -149,14 +152,12 @@ export class Game {
     if (wasGuarding) dmg = Math.round(dmg * 0.4);
     this.playVfx(battle, { player: "slash", lunge: "enemy", flash: true, guard: wasGuarding });
     player.hp = Math.max(0, player.hp - dmg);
-    this.addLog(battle, `${battle.enemyName} hits you for ${dmg}.`);
     battle.guarding = false;
     battle.playerHit = true;
     this.triggerFloat(battle, "player", `-${dmg}`, "dmg");
     if (player.hp <= 0) {
       battle.over = true;
       battle.result = "defeat";
-      this.addLog(battle, "You were defeated.");
     }
     battle.locked = false;
     this.state.player = player;
@@ -170,24 +171,22 @@ export class Game {
     }, 250);
   }
 
-  private resolvePlayerHit(battle: BattleState, dmg: number, label: string) {
+  /** Applies damage to the current enemy; returns true if it died. */
+  private resolvePlayerHit(battle: BattleState, dmg: number): boolean {
     battle.enemyHp = Math.max(0, battle.enemyHp - dmg);
     battle.enemyHit = true;
     this.triggerFloat(battle, "enemy", `-${dmg}`, "dmg");
-    this.addLog(battle, `${label} deals ${dmg} damage.`);
-    if (battle.enemyHp <= 0) {
-      battle.over = true;
-      battle.result = "victory";
-      this.addLog(battle, `${battle.enemyName} was defeated.`);
-      this.emitFx({ kind: "dissolve", side: "enemy" });
-    }
+    const defeated = battle.enemyHp <= 0;
+    if (defeated) this.emitFx({ kind: "dissolve", side: "enemy" });
+    return defeated;
   }
 
-  private grantVictoryXp() {
-    const battle = this.state.battle;
-    if (!battle || battle.result !== "victory") return;
+  /** Adds XP, rolling over levels (each grants stat points + a full
+   *  heal - a welcome mid-run second wind on longer gates). Returns
+   *  whether a level-up happened. */
+  private grantXp(amount: number): boolean {
     const player = { ...this.state.player };
-    player.xp += battle.xpReward;
+    player.xp += amount;
     let leveled = false;
     while (player.xp >= player.xpToNext) {
       player.xp -= player.xpToNext;
@@ -198,9 +197,45 @@ export class Game {
       player.statPoints += 3;
       leveled = true;
     }
-    this.state.gatesCleared = { ...this.state.gatesCleared, [battle.gateId]: true };
     this.state.player = player;
+    return leveled;
+  }
+
+  /** Called right after an enemy's HP hits 0: grants that wave's XP, then
+   *  either ends the gate (boss) or brings in the next wave (trash). */
+  private onEnemyDefeated(defeatedBattle: BattleState) {
+    const leveled = this.grantXp(defeatedBattle.xpReward);
     if (leveled) this.emitFx({ kind: "levelup" });
+
+    if (defeatedBattle.isBoss) {
+      this.state.gatesCleared = { ...this.state.gatesCleared, [defeatedBattle.gateId]: true };
+      this.state.battle = { ...defeatedBattle, over: true, result: "victory" };
+      this.notify();
+    } else {
+      setTimeout(() => this.advanceWave(), 900);
+    }
+  }
+
+  private advanceWave() {
+    const battle = this.state.battle;
+    if (!battle || battle.over) return;
+    const gate = GATES_DATA.find((g) => g.id === battle.gateId);
+    if (!gate) return;
+    const nextIndex = battle.waveIndex + 1;
+    const stats = statsForWave(gate, nextIndex, battle.totalWaves);
+    this.state.battle = {
+      ...battle,
+      waveIndex: nextIndex,
+      isBoss: nextIndex === battle.totalWaves,
+      enemyName: stats.name,
+      enemyHp: stats.hp, enemyMaxHp: stats.hp,
+      enemyAtk: stats.atk, enemyDef: stats.def,
+      xpReward: stats.xp,
+      locked: false,
+      enemyHit: false, playerHit: false,
+      vfxEnemy: null, vfxPlayer: null, guardRing: false, lunge: null, flash: false,
+      floatEnemy: null, floatPlayer: null, enemyGlow: false, playerGlow: false
+    };
     this.notify();
   }
 
@@ -210,7 +245,7 @@ export class Game {
     battle.locked = true;
     const dmg = Math.max(1, Math.round(6 + this.state.player.str * 1.1 - battle.enemyDef + (Math.random() * 4 - 2)));
     this.playVfx(battle, { enemy: "slash", lunge: "player", flash: true });
-    this.resolvePlayerHit(battle, dmg, "Attack");
+    const defeated = this.resolvePlayerHit(battle, dmg);
     this.state.battle = battle;
     this.notify();
     setTimeout(() => {
@@ -219,8 +254,8 @@ export class Game {
         this.notify();
       }
     }, 250);
-    if (!battle.over) setTimeout(() => this.enemyTurn(this.state.battle!), 650);
-    else this.grantVictoryXp();
+    if (defeated) this.onEnemyDefeated(battle);
+    else setTimeout(() => this.enemyTurn(this.state.battle!), 650);
   }
 
   battleSkill() {
@@ -230,7 +265,7 @@ export class Game {
     const player = { ...this.state.player, mp: this.state.player.mp - 15 };
     const dmg = Math.max(1, Math.round(14 + player.str * 1.6 - battle.enemyDef + (Math.random() * 4 - 2)));
     this.playVfx(battle, { enemy: "flurry", lunge: "player", flash: true });
-    this.resolvePlayerHit(battle, dmg, "Dagger Rush");
+    const defeated = this.resolvePlayerHit(battle, dmg);
     this.state.battle = battle;
     this.state.player = player;
     this.notify();
@@ -240,8 +275,8 @@ export class Game {
         this.notify();
       }
     }, 250);
-    if (!battle.over) setTimeout(() => this.enemyTurn(this.state.battle!), 650);
-    else this.grantVictoryXp();
+    if (defeated) this.onEnemyDefeated(battle);
+    else setTimeout(() => this.enemyTurn(this.state.battle!), 650);
   }
 
   battleGuard() {
@@ -250,7 +285,6 @@ export class Game {
     battle.locked = true;
     battle.guarding = true;
     this.playVfx(battle, { guard: true });
-    this.addLog(battle, "You brace for impact.");
     this.state.battle = battle;
     this.notify();
     setTimeout(() => this.enemyTurn(this.state.battle!), 650);
@@ -264,7 +298,6 @@ export class Game {
     player.hp = Math.min(player.maxHp, player.hp + 30);
     const inventory = { ...this.state.inventory, potions: this.state.inventory.potions - 1 };
     this.triggerFloat(battle, "player", "+30", "heal");
-    this.addLog(battle, "You drink a healing potion. +30 HP.");
     this.state.battle = battle;
     this.state.player = player;
     this.state.inventory = inventory;
@@ -279,7 +312,7 @@ export class Game {
       id: `${battle.gateId}-${Date.now()}`,
       name: `Shadow of the ${battle.enemyName}`,
       rank: rankForLevel(this.state.player.level),
-      type: battle.enemyName
+      type: battle.monsterKey
     };
     this.emitFx({ kind: "portal" });
     this.state.shadowArmy = [...this.state.shadowArmy, shadow];

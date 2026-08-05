@@ -16,17 +16,27 @@ engine, no external art/font dependencies — built to run on:
 
 ## Gameplay
 
-- **Gates** — 6 hand-placed encounters, E through S rank: *Crumbling Ruins*
+- **Gates** — 6 hand-placed gates, E through S rank: *Crumbling Ruins*
   (Goblin Scout) → *Sunken Crypt* (Orc Brute) → *Frost Hollow* (Ice Wraith)
   → *Red Cathedral* (Blood Knight) → *Void Spire* (Shadow Beast) →
   *Dragon's Maw* (Ancient Wyrm)
+- **Multi-wave encounters** — each gate is a run of several fights, not
+  one: 3 waves on E/D gates up to 5 on A/S gates, each wave a notch tougher
+  than the last ("easy to hard"), capped by a **boss** — a visually
+  amplified version of that gate's monster (bigger portrait, glowing
+  rotating ring, boss name, heavier stats). HP/MP carry over between waves
+  within a run — no free heals, potions are the only relief — so a gate
+  gets genuinely harder as you go
 - **Battle** — turn-based: **Attack**, **Dagger Rush** (15 MP skill),
-  **Guard** (halves the next hit), **Potion** (+30 HP), plus a live combat log
-- **Leveling** — XP curve grows 1.25x per level; each level grants +15 max
-  HP, +5 max MP, and 3 stat points to spend on STR/AGI/INT/VIT/PER
-- **Shadow Army** — defeating a monster and choosing **Arise** on the
+  **Guard** (halves the next hit), **Potion** (+30 HP). Feedback is purely
+  visual (floating numbers, hit-flash, slash/flurry effects) - no text log
+- **Leveling** — XP is granted per kill (trash waves give a smaller cut,
+  the boss a bonus); the curve grows 1.25x per level, and each level grants
+  +15 max HP, +5 max MP, a full heal, and 3 stat points to spend on
+  STR/AGI/INT/VIT/PER
+- **Shadow Army** — defeating the **boss** and choosing **Arise** on the
   victory screen adds it as a permanent Shadow, ranked to your current
-  Hunter rank
+  Hunter rank (trash-wave kills grant XP but don't offer Arise)
 - **Inventory** — starting gear (Dagger of the Depths, Reinforced Leather,
   Band of Focus) plus healing potions
 - Progress autosaves are **not yet wired up** (see Roadmap) — this MVP
