@@ -1,7 +1,7 @@
 import type { Game } from "../store";
 import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
-import { enemyPortrait, hunterPortrait } from "../art/portraits";
+import { enemyPortrait, hunterPortrait, shadowPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
 import { RARITY_META, SKILLS } from "../data";
 import type { EnemyUnit } from "../types";
@@ -63,24 +63,32 @@ export const battleScreen: ScreenModule = (root, game) => {
         </div>
         <div id="combat-details" style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;"></div>
 
-        <div class="arena-row" style="display:flex;align-items:center;justify-content:center;gap:var(--space-3);">
+        <div class="arena-row" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-2);">
           <canvas id="fx-canvas" class="fx-canvas"></canvas>
           <div id="arena-flash" class="arena-flash" style="display:none;"></div>
 
-          <div id="player-portrait" class="arena-portrait">
-            <div id="player-glow" class="impact-glow"></div>
-            <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait()}</div>
-            <div id="shadow-badge" style="display:none;" title="Deployed Shadow assisting">${icon("ghost")}</div>
-            <div id="player-vfx" class="vfx-layer" style="display:none;">
-              <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
+          <div id="enemy-group" style="display:flex;align-items:flex-end;justify-content:center;gap:10px;flex-wrap:wrap;"></div>
+
+          <span style="font-size:14px;color:var(--color-accent-400);flex-shrink:0;">${icon("lightning")}</span>
+
+          <div id="player-row" style="display:flex;align-items:flex-end;justify-content:center;gap:var(--space-3);">
+            <div id="player-portrait" class="arena-portrait">
+              <div id="player-glow" class="impact-glow"></div>
+              <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait()}</div>
+              <div id="player-vfx" class="vfx-layer" style="display:none;">
+                <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
+              </div>
+              <div id="player-guard-ring" class="guard-ring" style="display:none;"></div>
+              <div id="player-float" class="float-num" style="display:none;"></div>
             </div>
-            <div id="player-guard-ring" class="guard-ring" style="display:none;"></div>
-            <div id="player-float" class="float-num" style="display:none;"></div>
+
+            <div id="shadow-companion" style="display:none;flex-direction:column;align-items:center;gap:4px;">
+              <div id="shadow-companion-portrait" class="arena-portrait small">
+                <div id="shadow-companion-art" class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;"></div>
+              </div>
+              <div id="shadow-companion-name" style="font-size:10px;color:var(--color-accent-300);max-width:76px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+            </div>
           </div>
-
-          <span style="font-size:18px;color:var(--color-accent-400);flex-shrink:0;">${icon("lightning")}</span>
-
-          <div id="enemy-group" style="display:flex;align-items:flex-end;gap:10px;"></div>
         </div>
       </div>
 
@@ -130,7 +138,9 @@ export const battleScreen: ScreenModule = (root, game) => {
   const gateNameEl = $("#battle-gate-name");
   const modifierTagEl = $("#modifier-tag");
   const battleToastEl = $("#battle-toast");
-  const shadowBadgeEl = $("#shadow-badge");
+  const shadowCompanionEl = $("#shadow-companion");
+  const shadowCompanionArt = $("#shadow-companion-art");
+  const shadowCompanionName = $("#shadow-companion-name");
   const waveProgressEl = $("#wave-progress");
   const enemyNameEl = $("#enemy-name");
   const bossTag = $("#boss-tag");
@@ -248,6 +258,7 @@ export const battleScreen: ScreenModule = (root, game) => {
   });
 
   let renderedWaveKey = "";
+  let renderedShadowId = "";
 
   const update = () => {
     const b = game.state.battle;
@@ -273,7 +284,18 @@ export const battleScreen: ScreenModule = (root, game) => {
       battleToastEl.style.display = "none";
     }
 
-    shadowBadgeEl.style.display = game.state.shadowArmy.some((s) => s.deployed) ? "flex" : "none";
+    const deployedShadow = game.state.shadowArmy.find((s) => s.deployed);
+    if (deployedShadow) {
+      shadowCompanionEl.style.display = "flex";
+      if (renderedShadowId !== deployedShadow.id) {
+        renderedShadowId = deployedShadow.id;
+        shadowCompanionArt.innerHTML = shadowPortrait(deployedShadow.type);
+      }
+      shadowCompanionName.textContent = deployedShadow.name;
+    } else {
+      shadowCompanionEl.style.display = "none";
+      renderedShadowId = "";
+    }
 
     waveProgressEl.textContent = b.isBossWave ? "FINAL WAVE" : `WAVE ${b.waveIndex} / ${b.totalWaves}`;
     const aliveCount = b.enemies.filter((u) => u.alive).length;
