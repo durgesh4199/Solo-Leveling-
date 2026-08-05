@@ -63,7 +63,7 @@ export const battleScreen: ScreenModule = (root, game) => {
         </div>
         <div id="combat-details" style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;"></div>
 
-        <div class="arena-row" style="display:flex;align-items:center;justify-content:center;gap:var(--space-3);padding:var(--space-4) 0;">
+        <div class="arena-row" style="display:flex;align-items:center;justify-content:center;gap:var(--space-3);">
           <canvas id="fx-canvas" class="fx-canvas"></canvas>
           <div id="arena-flash" class="arena-flash" style="display:none;"></div>
 

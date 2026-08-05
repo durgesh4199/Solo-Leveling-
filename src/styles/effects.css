@@ -96,13 +96,15 @@
 @keyframes arenaFlash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
 
 /* Shader FX canvas overlay — spans the whole arena row, sits above every
-   portrait/CSS-vfx layer so shader slashes/particles read as "extra" flair. */
-.arena-row { position: relative; }
-/* Asymmetric overflow: generous room above for portal/level-up bursts that
-   bloom upward, but only a little below - the old symmetric -70px/-70px
-   let big effects bleed down through the arena's bottom padding into the
-   Hunter HP/MP panel right underneath it, visually smearing across both. */
-.fx-canvas { position: absolute; top: -90px; right: -10px; bottom: -15px; left: -10px; z-index: 5; pointer-events: none; }
+   portrait/CSS-vfx layer so shader slashes/particles read as "extra" flair.
+   `overflow:hidden` here is load-bearing: it's what makes it *impossible*
+   for the canvas to paint outside this box, no matter the shader radius or
+   the viewport's aspect ratio. Negative-inset tuning on the canvas alone
+   (an earlier attempt) only worked at the exact viewport it was tested at -
+   this clips absolutely, so the extra padding below is the canvas's only
+   headroom, and it can never reach the Hunter HP/MP panel underneath. */
+.arena-row { position: relative; overflow: hidden; padding: 56px var(--space-3) 34px; }
+.fx-canvas { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 
 /* Whole-arena shake, driven by the shader FX layer (JS toggles this class). */
 @keyframes arenaShake { 0%, 100% { transform: translate(0, 0); } 20% { transform: translate(-6px, 2px); } 40% { transform: translate(5px, -2px); } 60% { transform: translate(-4px, 1px); } 80% { transform: translate(3px, -1px); } }
