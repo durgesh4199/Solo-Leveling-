@@ -31,6 +31,7 @@ function enemySlotHtml(unit: EnemyUnit, art: string, isBoss: boolean, small: boo
         <div class="float-num" style="display:none;"></div>
       </div>
       <div class="mini-hp-track bar-track" style="width:${small ? 68 : 100}px;height:5px;"><div class="mini-hp-fill bar-fill" style="background:var(--color-neutral-400);"></div></div>
+      <div class="mini-hp-text" style="font-size:10px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;"></div>
     </div>
   `;
 }
@@ -60,6 +61,7 @@ export const battleScreen: ScreenModule = (root, game) => {
           <div id="enemy-name" style="font-size:15px;font-weight:500;"></div>
           <span id="boss-tag" class="tag tag-accent" style="display:none;flex-shrink:0;">BOSS</span>
         </div>
+        <div id="combat-details" style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;"></div>
 
         <div class="arena-row" style="display:flex;align-items:center;justify-content:center;gap:var(--space-3);padding:var(--space-4) 0;">
           <canvas id="fx-canvas" class="fx-canvas"></canvas>
@@ -132,6 +134,7 @@ export const battleScreen: ScreenModule = (root, game) => {
   const waveProgressEl = $("#wave-progress");
   const enemyNameEl = $("#enemy-name");
   const bossTag = $("#boss-tag");
+  const combatDetailsEl = $("#combat-details");
   const playerNameEl = $("#player-name");
   const playerHpText = $("#player-hp-text");
   const playerHpFill = $("#player-hp-fill");
@@ -223,15 +226,17 @@ export const battleScreen: ScreenModule = (root, game) => {
         if (e.targetUid) {
           const slot = findEnemySlot(e.targetUid);
           if (slot) {
+            const isSmall = !!slot.querySelector(".arena-portrait.small");
             const c = center(fxCanvas, slot);
-            shaderFx.dissolve(c.x, c.y, VIOLET);
+            shaderFx.dissolve(c.x, c.y, VIOLET, isSmall ? 0.55 : 1);
           }
         }
         break;
       }
       case "portal": {
+        const small = !!enemyGroup.querySelector(".arena-portrait.small");
         const c = enemyGroup.children.length > 0 ? center(fxCanvas, enemyGroup) : center(fxCanvas, playerPortrait);
-        shaderFx.arisePortal(c.x, c.y, VIOLET_DEEP);
+        shaderFx.arisePortal(c.x, c.y, VIOLET_DEEP, small ? 0.6 : 1);
         break;
       }
       case "levelup": {
@@ -272,8 +277,20 @@ export const battleScreen: ScreenModule = (root, game) => {
 
     waveProgressEl.textContent = b.isBossWave ? "FINAL WAVE" : `WAVE ${b.waveIndex} / ${b.totalWaves}`;
     const aliveCount = b.enemies.filter((u) => u.alive).length;
-    enemyNameEl.textContent = b.enemies.length > 1 ? `${b.enemyName} ×${aliveCount}` : b.enemyName;
+    enemyNameEl.textContent = aliveCount > 1 ? `${b.enemyName} ×${aliveCount}` : b.enemyName;
     bossTag.style.display = b.isBossWave ? "inline-flex" : "none";
+
+    const currentTarget = b.enemies.find((u) => u.alive);
+    if (currentTarget && !b.over) {
+      const critPct = Math.round(game.critChance * 100);
+      combatDetailsEl.style.visibility = "visible";
+      combatDetailsEl.innerHTML = `
+        <span>Target — ATK ${currentTarget.atk} · DEF ${currentTarget.def}</span>
+        <span>You — STR ${game.effectiveStat("str")} · CRIT ${critPct}%</span>
+      `;
+    } else {
+      combatDetailsEl.style.visibility = "hidden";
+    }
 
     const waveKey = `${b.gateId}:${b.waveIndex}`;
     if (waveKey !== renderedWaveKey) {
@@ -294,11 +311,13 @@ export const battleScreen: ScreenModule = (root, game) => {
       const flareEl = slot.querySelector<HTMLElement>(".flurry-flare")!;
       const floatEl = slot.querySelector<HTMLElement>(".float-num")!;
       const hpFill = slot.querySelector<HTMLElement>(".mini-hp-fill")!;
+      const hpText = slot.querySelector<HTMLElement>(".mini-hp-text")!;
 
       slot.style.opacity = unit.alive ? "1" : "0.18";
       slot.style.filter = unit.alive ? "none" : "grayscale(1)";
       portraitEl.classList.toggle("is-target", unit.uid === firstAliveUid);
       hpFill.style.width = `${Math.round((unit.hp / unit.maxHp) * 100)}%`;
+      hpText.textContent = `${unit.hp}/${unit.maxHp}`;
       glowEl.classList.toggle("show", !!unit.glow);
       vfxEl.style.display = unit.vfx ? "block" : "none";
       vfxEl.className = `vfx-layer ${unit.vfx ?? ""}`;

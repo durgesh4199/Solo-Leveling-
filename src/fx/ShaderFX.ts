@@ -140,16 +140,19 @@ export class ShaderFX {
     this.spawnBurst(x, y, hexToRgb(color), 14, 70, 0.55);
   }
 
-  dissolve(x: number, y: number, color: string) {
+  /** `scale` shrinks the swirl+burst for small group-member portraits
+   *  (76px) so it doesn't blow past its own slot into its neighbors' -
+   *  full size (1) suits the 132px player/boss portraits. */
+  dissolve(x: number, y: number, color: string, scale = 1) {
     if (!this.enabled) return;
-    this.pushRadial(x, y, color, 1, 80, 1000);
-    this.spawnBurst(x, y, hexToRgb(color), 60, 130, 1.1, true);
+    this.pushRadial(x, y, color, 1, 80 * scale, 1000);
+    this.spawnBurst(x, y, hexToRgb(color), Math.round(60 * scale), 130 * scale, 1.1, true);
   }
 
-  arisePortal(x: number, y: number, color: string) {
+  arisePortal(x: number, y: number, color: string, scale = 1) {
     if (!this.enabled) return;
-    this.pushRadial(x, y, color, 1, 90, 1300);
-    this.spawnBurst(x, y, hexToRgb(color), 50, 110, 1.2, true, true);
+    this.pushRadial(x, y, color, 1, 90 * scale, 1300);
+    this.spawnBurst(x, y, hexToRgb(color), Math.round(50 * scale), 110 * scale, 1.2, true, true);
   }
 
   levelUpBurst(x: number, y: number, color: string) {

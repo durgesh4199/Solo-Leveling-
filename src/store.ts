@@ -87,8 +87,9 @@ export class Game {
     this.notify();
   }
 
-  /** Base stat + whatever's equipped in every slot that boosts it. */
-  private effectiveStat(key: StatKey): number {
+  /** Base stat + whatever's equipped in every slot that boosts it. Public -
+   *  the battle UI reads this too, for the combat-details readout. */
+  effectiveStat(key: StatKey): number {
     const p = this.state.player;
     let value = p[key];
     for (const item of Object.values(p.equipment)) {
@@ -97,9 +98,13 @@ export class Game {
     return value;
   }
 
+  /** 0..1 chance any given Attack/Skill hit crits. */
+  get critChance(): number {
+    return Math.min(0.5, 0.08 + this.effectiveStat("agi") * 0.003 + this.effectiveStat("per") * 0.002);
+  }
+
   private rollCrit(): boolean {
-    const chance = Math.min(0.5, 0.08 + this.effectiveStat("agi") * 0.003 + this.effectiveStat("per") * 0.002);
-    return Math.random() < chance;
+    return Math.random() < this.critChance;
   }
 
   // ---- wave/enemy construction ----
