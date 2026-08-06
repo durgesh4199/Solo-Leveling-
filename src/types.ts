@@ -195,5 +195,9 @@ export interface GameState {
   /** Potion id (see PotionDef) -> count owned. */
   inventory: { potions: Record<string, number> };
   bag: LootItem[];
+  /** The equipment Shop's current stock - rerolls (for gold) rather than
+   *  regenerating on every visit, so it's a real "what's in stock right
+   *  now" decision instead of an infinite vending machine. */
+  shop: { stock: LootItem[]; rerollCost: number };
   battle: BattleState | null;
 }

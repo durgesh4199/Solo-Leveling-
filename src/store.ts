@@ -1,4 +1,4 @@
-import { GATES_DATA, POTIONS, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, rankForLevel, rollGateModifier, rollRarity, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
+import { GATES_DATA, POTIONS, STAT_TUNING, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rollGateModifier, rollRarity, rollShopStock, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
 import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 
 /** Events the shader/particle FX layer cares about, separate from the
@@ -30,6 +30,7 @@ const INITIAL_STATE: GameState = {
   shadowArmy: [],
   inventory: { potions: { hp_minor: 3, mp_minor: 1 } },
   bag: [],
+  shop: { stock: [], rerollCost: 60 },
   battle: null
 };
 
@@ -57,6 +58,12 @@ export class Game {
   private floatSeq = 0;
   private unitSeq = 0;
   private toastSeq = 0;
+
+  constructor() {
+    // First stock is free - a fresh Hunter shouldn't open the Shop to
+    // nothing for sale.
+    this.rerollShop(true);
+  }
 
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn);
@@ -99,7 +106,7 @@ export class Game {
 
   /** 0..1 chance any given Attack/Skill hit crits. */
   get critChance(): number {
-    return Math.min(0.5, 0.08 + this.effectiveStat("agi") * 0.003 + this.effectiveStat("per") * 0.002);
+    return Math.min(0.5, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint);
   }
 
   private rollCrit(): boolean {
@@ -505,7 +512,7 @@ export class Game {
    *  Attack can whiff outright. AGI/PER (the same stats that drive crit)
    *  cut the chance down, so a nimble build barely notices it. */
   private selfGuardMissChance(): number {
-    return Math.max(0.05, 0.32 - this.effectiveStat("agi") * 0.01 - this.effectiveStat("per") * 0.006);
+    return Math.max(0.05, 0.32 - this.effectiveStat("agi") * STAT_TUNING.agiMissReductionPerPoint - this.effectiveStat("per") * STAT_TUNING.perMissReductionPerPoint);
   }
 
   battleAttack() {
@@ -528,7 +535,7 @@ export class Game {
     }
 
     const isCrit = this.rollCrit();
-    let dmg = Math.max(1, Math.round(6 + this.effectiveStat("str") * 1.1 - target.def + (Math.random() * 4 - 2)));
+    let dmg = Math.max(1, Math.round(6 + this.effectiveStat("str") * STAT_TUNING.strAtkPerPoint - target.def + (Math.random() * 4 - 2)));
     if (isCrit) dmg = Math.round(dmg * 1.8);
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy: isCrit });
     this.setUnitVfx(target, isCrit ? "flurry" : "slash");
@@ -686,11 +693,21 @@ export class Game {
     this.notify();
   }
 
+  /** VIT/INT don't feed into any combat formula the way STR/AGI/PER do, so
+   *  they buy their payoff directly here: immediate max (and current) HP/MP,
+   *  rather than only mattering once you happen to level up. */
   addStat(stat: StatKey) {
     if (this.state.player.statPoints <= 0) return;
     const player = { ...this.state.player };
     player[stat] += 1;
     player.statPoints -= 1;
+    if (stat === "vit") {
+      player.maxHp += STAT_TUNING.vitHpPerPoint;
+      player.hp += STAT_TUNING.vitHpPerPoint;
+    } else if (stat === "int") {
+      player.maxMp += STAT_TUNING.intMpPerPoint;
+      player.mp += STAT_TUNING.intMpPerPoint;
+    }
     this.state.player = player;
     this.notify();
   }
@@ -722,6 +739,29 @@ export class Game {
 
   discardItem(itemId: string) {
     this.state.bag = this.state.bag.filter((i) => i.id !== itemId);
+    this.notify();
+  }
+
+  /** Rerolls the Shop's equipment stock at the player's current rank.
+   *  `free` skips the gold cost - used only for the very first stock. */
+  rerollShop(free = false) {
+    if (!free) {
+      if (this.state.player.gold < this.state.shop.rerollCost) return;
+      this.state.player = { ...this.state.player, gold: this.state.player.gold - this.state.shop.rerollCost };
+    }
+    const rank = rankForLevel(this.state.player.level);
+    this.state.shop = { ...this.state.shop, stock: rollShopStock(rank) };
+    this.notify();
+  }
+
+  buyShopItem(itemId: string) {
+    const item = this.state.shop.stock.find((i) => i.id === itemId);
+    if (!item) return;
+    const price = priceForItem(item);
+    if (this.state.player.gold < price) return;
+    this.state.player = { ...this.state.player, gold: this.state.player.gold - price };
+    this.state.bag = [...this.state.bag, item];
+    this.state.shop = { ...this.state.shop, stock: this.state.shop.stock.filter((i) => i.id !== itemId) };
     this.notify();
   }
 

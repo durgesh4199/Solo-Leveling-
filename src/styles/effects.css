@@ -138,3 +138,75 @@
 .arena-shake { animation: arenaShake 0.32s ease; }
 @keyframes arenaShakeHeavy { 0%, 100% { transform: translate(0, 0); } 15% { transform: translate(-9px, 3px); } 35% { transform: translate(8px, -3px); } 55% { transform: translate(-7px, 2px); } 75% { transform: translate(6px, -2px); } 90% { transform: translate(-3px, 1px); } }
 .arena-shake-heavy { animation: arenaShakeHeavy 0.42s ease; }
+
+/* Status screen — a stat point spent floats its concrete payoff (e.g.
+   "+5 Max HP") up off the row it was spent on, the same floatUp language
+   battle already uses for damage/heal numbers. */
+.stat-gain-toast.show { animation: statGainFloat 1s ease forwards; }
+@keyframes statGainFloat {
+  0% { opacity: 0; transform: translateY(4px); }
+  15% { opacity: 1; transform: translateY(-2px); }
+  100% { opacity: 0; transform: translateY(-22px); }
+}
+
+/* Title screen ambiance — slow drifting motes + a breathing rune ring
+   around the Hunter portrait, so "cool system-awakening" reads as motion,
+   not just a static gradient. */
+@keyframes titleDrift {
+  0% { transform: translateY(0); opacity: 0; }
+  12% { opacity: 0.7; }
+  88% { opacity: 0.55; }
+  100% { transform: translateY(-140px); opacity: 0; }
+}
+.title-mote {
+  position: absolute; bottom: 0; width: 3px; height: 3px; border-radius: 50%;
+  background: var(--color-accent-300); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  animation: titleDrift linear infinite; pointer-events: none;
+}
+@keyframes titleRingSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes titleRingPulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
+.title-ring {
+  position: absolute; inset: -14px; border-radius: 50%;
+  border: 1.5px dashed var(--color-accent-400);
+  animation: titleRingSpin 16s linear infinite, titleRingPulse 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+.title-ring::before {
+  content: ""; position: absolute; inset: 8px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--color-accent-300) 50%, transparent);
+}
+@keyframes titleReveal {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.title-reveal { animation: titleReveal 0.6s ease both; }
+@keyframes titleGlow { 0%, 100% { text-shadow: 0 0 18px color-mix(in srgb, var(--color-accent) 45%, transparent); } 50% { text-shadow: 0 0 30px color-mix(in srgb, var(--color-accent) 75%, transparent); } }
+.title-glow { animation: titleGlow 3.4s ease-in-out infinite; }
+@keyframes titleBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+.title-cursor { display: inline-block; width: 6px; height: 11px; margin-left: 3px; background: var(--color-accent-300); animation: titleBlink 1s step-end infinite; vertical-align: -1px; }
+
+/* Inventory — equipment paperdoll grid (see the reference layout): a small
+   cross of slot tiles around the Hunter portrait, connected by thin
+   pathway lines, instead of a flat stacked list. */
+.paperdoll {
+  position: relative; display: grid;
+  grid-template-columns: 74px 92px 74px; grid-template-rows: 74px 92px 74px;
+  gap: 8px; justify-content: center; margin: 0 auto;
+}
+.paperdoll::before, .paperdoll::after {
+  content: ""; position: absolute; background: var(--color-neutral-800); z-index: 0;
+}
+.paperdoll::before { left: 0; right: 0; top: 50%; height: 2px; transform: translateY(-1px); }
+.paperdoll::after { top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-1px); }
+.paperdoll-slot {
+  position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-neutral-800);
+  cursor: default; text-align: center; padding: 4px;
+}
+.paperdoll-slot.filled { cursor: pointer; }
+.paperdoll-slot .slot-icon { font-size: 22px; }
+.paperdoll-slot .slot-label { font-size: 9px; color: var(--color-neutral-600); text-transform: uppercase; letter-spacing: 0.04em; }
+.paperdoll-center {
+  position: relative; z-index: 1; border-radius: 50%; overflow: hidden;
+  background: var(--color-surface); border: 1px solid var(--color-neutral-800);
+}

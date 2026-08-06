@@ -159,6 +159,20 @@ export function generateLoot(rank: Rank, rarity: ItemRarity): LootItem {
   };
 }
 
+/** Gold price for a shop-listed item - scales directly off the stat power
+ *  already baked into it by generateLoot (which folds in both rank and
+ *  rarity), so pricing never drifts out of step with those two systems. */
+export function priceForItem(item: LootItem): number {
+  return Math.max(15, Math.round(item.statBonus * 9));
+}
+
+/** Rolls a fresh batch of purchasable gear at the given rank - the Shop's
+ *  stock. Slightly loot-luckier than a kill drop (small rarity bonus) since
+ *  it's gold you had to earn, not a free kill roll. */
+export function rollShopStock(rank: Rank, count = 6): LootItem[] {
+  return Array.from({ length: count }, () => generateLoot(rank, rollRarity(0.05)));
+}
+
 /** Rolled once per gate run - swaps up the risk/reward on every attempt
  *  instead of the same fight playing out identically each time. */
 export const GATE_MODIFIERS: GateModifier[] = [
@@ -180,13 +194,26 @@ export const SHADOW_RANK_POWER: Record<Rank, number> = {
   E: 3, D: 5, C: 8, B: 12, A: 18, S: 26
 };
 
-export const STAT_DEFS: { key: "str" | "agi" | "int" | "vit" | "per"; label: string }[] = [
-  { key: "str", label: "STR — Strength" },
-  { key: "agi", label: "AGI — Agility" },
-  { key: "int", label: "INT — Intelligence" },
-  { key: "vit", label: "VIT — Vitality" },
-  { key: "per", label: "PER — Perception" }
+export const STAT_DEFS: { key: "str" | "agi" | "int" | "vit" | "per"; label: string; icon: string }[] = [
+  { key: "str", label: "STR — Strength", icon: "sword" },
+  { key: "agi", label: "AGI — Agility", icon: "lightning" },
+  { key: "int", label: "INT — Intelligence", icon: "sparkles" },
+  { key: "vit", label: "VIT — Vitality", icon: "shield" },
+  { key: "per", label: "PER — Perception", icon: "moon-stars" }
 ];
+
+/** Every number a stat point buys, centralized so the store (which applies
+ *  the effects) and the Status screen (which shows what you just gained)
+ *  can never drift out of sync with each other. */
+export const STAT_TUNING = {
+  strAtkPerPoint: 1.1,
+  vitHpPerPoint: 5,
+  intMpPerPoint: 3,
+  agiCritPerPoint: 0.003,
+  perCritPerPoint: 0.002,
+  agiMissReductionPerPoint: 0.01,
+  perMissReductionPerPoint: 0.006
+};
 
 /** Skills unlock progressively as the Hunter levels up. Attack/Guard/Potion
  *  are always available; these are the spendable-MP options. */
