@@ -13,12 +13,15 @@ Single-player, browser-based, no backend. Progress **does** persist now
 (versioned localStorage save, see "Meta-progression" below) - this is a
 recent addition, don't assume the game still resets every reload.
 
-This project is mid-way through a long-term content expansion (Shadow
-Evolution, Talent Trees, Hunter Classes, Crafting, Relics, Dungeon
-Modifiers, Random Events, Promotion Exams, an Infinite Tower, Prestige,
-and more) tracked in **`EXPANSION_ROADMAP.md`** - read that alongside this
-file if you're continuing that work. Phase 1 of it (Save, Titles,
-Achievements) is already built; everything after is still backlog.
+This project is mid-way through a long-term content expansion, built to a
+**fixed, numbered 20-item order set by the project owner** and tracked in
+**`EXPANSION_ROADMAP.md`** - read that alongside this file before doing
+any expansion work; it has the current status of every item and the rule
+that the order isn't renegotiable without an explicit instruction to. Save/
+Load, Achievements, and Titles are already built (Achievements/Titles
+landed ahead of their numbered slot in that order - see the roadmap's note
+on why); everything else is pending, one item at a time, waiting for the
+owner's go-ahead before each one starts.
 
 Repo: `durgesh4199/Solo-Leveling-`, working branch
 `claude/hunter-protocol-game-b1i5ur`. Also published as a single-file HTML
@@ -312,14 +315,16 @@ Arise, level-up, dissolve).
 - Procedural SVG portraits stand in for real artwork.
 - Sound design not started.
 - Shadow Army has no rename/upgrade yet (deploy/recall only).
-- The full long-term content roadmap (Shadow Evolution, Talent Trees,
-  Hunter Classes, Crafting, Relics, Dungeon Modifiers, Random Events,
-  Promotion Exams, Infinite Tower, Daily/Weekly missions, Prestige, combat
-  status effects, enemy tiers, visual polish) is tracked, phased, in
-  **`EXPANSION_ROADMAP.md`** - Phase 1 (Save/Titles/Achievements) is done;
-  everything from Phase 2 on is still backlog. Check it before starting
-  any "expand the game" work so you don't duplicate or contradict the
-  sequencing/architecture decisions already made there.
+- The full long-term content roadmap is a **fixed, numbered 20-item order
+  set by the project owner**, tracked item-by-item in
+  **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture →
+  Inventory improvements → Equipment affix expansion → Shadow Collection →
+  Shadow Evolution → Shadow Management UI → Talent Tree → Hunter Classes →
+  Promotion Exams → Dungeon Modifiers → Random Events → Better Enemy AI →
+  Crafting → Relics → Equipment Sets → Infinite Tower → Achievements ✅ →
+  Titles ✅ → Prestige. Always check that file for current status before
+  starting any expansion work - **do not start the next item without an
+  explicit go-ahead**, and do not reorder or batch items.
 
 ## Workflow notes for whoever picks this up next
 
