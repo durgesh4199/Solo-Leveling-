@@ -2,30 +2,38 @@ import type { Game } from "../store";
 import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { hunterPortrait } from "../art/portraits";
-import { POTIONS, RARITY_META, priceForItem } from "../data";
+import { POTIONS, RARITY_META, affixText, priceForItem } from "../data";
 import type { ItemRarity, ItemSlot, LootItem } from "../types";
 
 const SLOT_LABEL: Record<ItemSlot, string> = {
-  weapon: "Weapon", armor: "Armor", ring: "Ring", amulet: "Amulet"
+  weapon: "Weapon", helmet: "Helmet", chest: "Body Armor", legs: "Legs", ring: "Ring", amulet: "Amulet"
 };
 const SLOT_ICON: Record<ItemSlot, string> = {
-  weapon: "sword", armor: "shield-checkered", ring: "circle-dashed", amulet: "moon-stars"
+  weapon: "sword", helmet: "helmet", chest: "shield-checkered", legs: "boots", ring: "circle-dashed", amulet: "moon-stars"
 };
-/** Grid position (paperdoll.css: row/col) for each of the 4 slots around
- *  the center portrait - top/left/right/bottom, matching a classic
- *  equipment-grid layout scaled down to the gear this game actually has. */
+/** Grid position (see .paperdoll in effects.css) for each of the 6 slots
+ *  around the center portrait - a vertical head/chest/legs "body" column
+ *  flanked by amulet/ring up top and the weapon at the side, echoing the
+ *  reference equipment-grid layout scaled to the gear this game has. */
 const PAPERDOLL_POS: Record<ItemSlot, string> = {
-  amulet: "grid-column:2;grid-row:1;",
+  amulet: "grid-column:1;grid-row:1;",
+  helmet: "grid-column:2;grid-row:1;",
+  ring: "grid-column:3;grid-row:1;",
   weapon: "grid-column:1;grid-row:2;",
-  ring: "grid-column:3;grid-row:2;",
-  armor: "grid-column:2;grid-row:3;"
+  chest: "grid-column:2;grid-row:3;",
+  legs: "grid-column:2;grid-row:4;"
 };
-const RARITY_ORDER: ItemRarity[] = ["common", "rare", "epic", "legendary"];
+const SLOT_ORDER: ItemSlot[] = ["weapon", "helmet", "chest", "legs", "ring", "amulet"];
+const RARITY_ORDER: ItemRarity[] = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "godly"];
 type SubTab = "gear" | "shop" | "potions";
 
 function rarityTag(item: LootItem): string {
   const meta = RARITY_META[item.rarity];
   return `<span class="tag" style="font-size:9px;border:1px solid ${meta.color};color:${meta.color};">${meta.label}</span>`;
+}
+
+function affixSummary(item: LootItem): string {
+  return item.affixes.map(affixText).join(" · ");
 }
 
 /** Not a `simpleScreen` - both the sub-tab selection and the bag's filters
@@ -41,7 +49,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       style="flex:1;justify-content:center;padding:var(--space-2);font-size:12px;">${icon(iconName as any)} ${label}</button>`;
 
   const drawGear = (p: Game["state"]["player"]) => {
-    const paperdollSlots = (Object.keys(SLOT_LABEL) as ItemSlot[]).map((slot) => {
+    const paperdollSlots = SLOT_ORDER.map((slot) => {
       const item = p.equipment[slot];
       const pos = PAPERDOLL_POS[slot];
       if (!item) {
@@ -53,9 +61,9 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       }
       const meta = RARITY_META[item.rarity];
       return `
-        <div class="paperdoll-slot filled" style="${pos}border-color:${meta.color};box-shadow:0 0 0 1px ${meta.color} inset, 0 0 14px 1px color-mix(in srgb, ${meta.color} 35%, transparent);" data-action="unequip-item" data-slot="${slot}" title="${item.name} — click to unequip">
+        <div class="paperdoll-slot filled" style="${pos}border-color:${meta.color};box-shadow:0 0 0 1px ${meta.color} inset, 0 0 14px 1px color-mix(in srgb, ${meta.color} 35%, transparent);" data-action="unequip-item" data-slot="${slot}" title="${item.name} — ${affixSummary(item)} — click to unequip">
             <span class="slot-icon" style="color:${meta.color};">${icon(item.icon as any)}</span>
-            <span class="slot-label" style="color:${meta.color};">+${item.statBonus} ${item.statKey.toUpperCase()}</span>
+            <span class="slot-label" style="color:${meta.color};">${affixText(item.affixes[0])}</span>
           </div>`;
     }).join("");
 
@@ -71,7 +79,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
     const bagFilters = game.state.bag.length === 0 ? "" : `
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:var(--space-2);">
         ${filterChip(slotFilter === "all", "All Slots", "slot", "all")}
-        ${(Object.keys(SLOT_LABEL) as ItemSlot[]).map((s) => filterChip(slotFilter === s, SLOT_LABEL[s], "slot", s)).join("")}
+        ${SLOT_ORDER.map((s) => filterChip(slotFilter === s, SLOT_LABEL[s], "slot", s)).join("")}
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:var(--space-2);">
         ${filterChip(rarityFilter === "all", "All Rarities", "rarity", "all")}
@@ -89,9 +97,9 @@ export const inventoryScreen: ScreenModule = (root, game) => {
             <span style="font-size:18px;color:${meta.color};flex-shrink:0;">${icon(item.icon as any)}</span>
             <div style="flex:1;min-width:0;">
               <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>
-              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap;">
                 ${rarityTag(item)}
-                <span style="font-size:11px;color:var(--color-neutral-500);">+${item.statBonus} ${item.statKey.toUpperCase()}</span>
+                <span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[item.slot]} · ${affixSummary(item)}</span>
               </div>
             </div>
             <button class="btn btn-icon" style="width:28px;height:28px;flex-shrink:0;color:var(--color-accent-300);" data-action="equip-item" data-item="${item.id}" title="Equip">${icon("check-circle")}</button>
@@ -103,6 +111,8 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       <div>
         <h5 style="margin-bottom:var(--space-3);color:var(--color-neutral-400);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;text-align:center;">Equipped</h5>
         <div class="paperdoll">
+          <div class="paperdoll-line-h"></div>
+          <div class="paperdoll-line-v"></div>
           <div class="paperdoll-center" style="grid-column:2;grid-row:2;">${hunterPortrait()}</div>
           ${paperdollSlots}
         </div>
@@ -128,9 +138,9 @@ export const inventoryScreen: ScreenModule = (root, game) => {
             <span style="font-size:18px;color:${meta.color};flex-shrink:0;">${icon(item.icon as any)}</span>
             <div style="flex:1;min-width:0;">
               <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>
-              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;">
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap;">
                 ${rarityTag(item)}
-                <span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[item.slot]} · +${item.statBonus} ${item.statKey.toUpperCase()}</span>
+                <span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[item.slot]} · ${affixSummary(item)}</span>
               </div>
             </div>
             <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:6px 10px;font-size:11px;" data-action="buy-shop-item" data-item="${item.id}" ${canBuy ? "" : "disabled"}>

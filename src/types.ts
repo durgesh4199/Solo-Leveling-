@@ -42,16 +42,26 @@ export interface WavePlanEntry {
   unitStart: number; // global trash-unit index this wave starts at (for stat ramp)
 }
 
-export type ItemRarity = "common" | "rare" | "epic" | "legendary";
-export type ItemSlot = "weapon" | "armor" | "ring" | "amulet";
+export type ItemRarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "mythic" | "godly";
+export type ItemSlot = "weapon" | "helmet" | "chest" | "legs" | "ring" | "amulet";
+
+/** What a single roll on an item actually grants. The five core stats
+ *  work like before (folds into effectiveStat); `hp`/`mp` are flat, direct
+ *  max-HP/max-MP bonuses (not funneled through a stat point), and `crit`
+ *  is a flat percentage-point bonus to crit chance. */
+export type AffixKey = StatKey | "hp" | "mp" | "crit";
+export interface ItemAffix {
+  key: AffixKey;
+  value: number;
+}
 
 export interface LootItem {
   id: string;
   name: string;
   slot: ItemSlot;
   rarity: ItemRarity;
-  statKey: StatKey;
-  statBonus: number;
+  /** 1 (common/uncommon) to 4 (godly) rolls, each a different affix key. */
+  affixes: ItemAffix[];
   icon: string;
 }
 

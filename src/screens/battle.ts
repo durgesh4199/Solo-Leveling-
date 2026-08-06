@@ -412,11 +412,13 @@ export const battleScreen: ScreenModule = (root, game) => {
       }
     }
 
+    const maxHp = game.effectiveMaxHp();
+    const maxMp = game.effectiveMaxMp();
     playerNameEl.textContent = p.name;
-    playerHpText.textContent = `${p.hp} / ${p.maxHp} HP`;
-    playerHpFill.style.width = `${Math.round((p.hp / p.maxHp) * 100)}%`;
+    playerHpText.textContent = `${p.hp} / ${maxHp} HP`;
+    playerHpFill.style.width = `${Math.round((p.hp / maxHp) * 100)}%`;
     playerHpTrack.classList.toggle("hit", !!b.playerHit);
-    playerMpFill.style.width = `${Math.round((p.mp / p.maxMp) * 100)}%`;
+    playerMpFill.style.width = `${Math.round((p.mp / maxMp) * 100)}%`;
 
     attackBtn.disabled = b.locked;
     guardBtn.disabled = b.locked;

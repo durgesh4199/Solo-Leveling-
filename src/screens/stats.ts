@@ -93,11 +93,13 @@ export const statsScreen: ScreenModule = (root, game) => {
   const update = () => {
     const p = game.state.player;
     const rank = rankForLevel(p.level);
+    const maxHp = game.effectiveMaxHp();
+    const maxMp = game.effectiveMaxMp();
     els.sub.textContent = `${p.name} · ${rank}-Rank · Level ${p.level}`;
-    els.hpText.textContent = `${p.hp} / ${p.maxHp}`;
-    els.hpFill.style.width = `${Math.round((p.hp / p.maxHp) * 100)}%`;
-    els.mpText.textContent = `${p.mp} / ${p.maxMp}`;
-    els.mpFill.style.width = `${Math.round((p.mp / p.maxMp) * 100)}%`;
+    els.hpText.textContent = `${p.hp} / ${maxHp}`;
+    els.hpFill.style.width = `${Math.round((p.hp / maxHp) * 100)}%`;
+    els.mpText.textContent = `${p.mp} / ${maxMp}`;
+    els.mpFill.style.width = `${Math.round((p.mp / maxMp) * 100)}%`;
     els.xpText.textContent = `${p.xp} / ${p.xpToNext}`;
     els.xpFill.style.width = `${Math.round((p.xp / p.xpToNext) * 100)}%`;
     els.points.textContent = `${p.statPoints} available`;

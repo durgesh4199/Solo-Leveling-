@@ -93,20 +93,58 @@ export class Game {
     this.notify();
   }
 
-  /** Base stat + whatever's equipped in every slot that boosts it. Public -
-   *  the battle UI reads this too, for the combat-details readout. */
+  /** Base stat + whatever's equipped anywhere rolled a matching affix.
+   *  Public - the battle UI reads this too, for the combat-details readout. */
   effectiveStat(key: StatKey): number {
     const p = this.state.player;
     let value = p[key];
     for (const item of Object.values(p.equipment)) {
-      if (item && item.statKey === key) value += item.statBonus;
+      if (!item) continue;
+      for (const affix of item.affixes) {
+        if (affix.key === key) value += affix.value;
+      }
     }
     return value;
   }
 
+  /** Sum of a non-core-stat affix (hp/mp/crit) across every equipped slot. */
+  private equipmentAffixSum(key: "hp" | "mp" | "crit"): number {
+    const p = this.state.player;
+    let sum = 0;
+    for (const item of Object.values(p.equipment)) {
+      if (!item) continue;
+      for (const affix of item.affixes) {
+        if (affix.key === key) sum += affix.value;
+      }
+    }
+    return sum;
+  }
+
+  /** Base max HP/MP (level + VIT/INT stat points) plus flat equipment
+   *  bonuses - public, the battle/status screens both display against this
+   *  rather than the raw player.maxHp/maxMp. */
+  effectiveMaxHp(): number {
+    return this.state.player.maxHp + this.equipmentAffixSum("hp");
+  }
+
+  effectiveMaxMp(): number {
+    return this.state.player.maxMp + this.equipmentAffixSum("mp");
+  }
+
+  /** Current hp/mp can end up above a just-lowered effective max (e.g.
+   *  unequipping a +HP item) - clamp both down after any equipment change
+   *  so the HP/MP bars can never show over 100%. */
+  private clampVitals() {
+    const player = { ...this.state.player };
+    player.hp = Math.min(player.hp, this.effectiveMaxHp());
+    player.mp = Math.min(player.mp, this.effectiveMaxMp());
+    this.state.player = player;
+  }
+
   /** 0..1 chance any given Attack/Skill hit crits. */
   get critChance(): number {
-    return Math.min(0.5, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint);
+    const equipmentCrit = this.equipmentAffixSum("crit") / 100;
+    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit);
   }
 
   private rollCrit(): boolean {
@@ -151,8 +189,8 @@ export class Game {
     const trashCount = totalEnemiesForGate(gate) - 1;
     const entry = plan[0];
     const modifier = rollGateModifier();
-    this.state.player.hp = this.state.player.maxHp;
-    this.state.player.mp = this.state.player.maxMp;
+    this.state.player.hp = this.effectiveMaxHp();
+    this.state.player.mp = this.effectiveMaxMp();
     this.state.screen = "battle";
     this.state.battle = {
       gateId: gate.id, gateName: gate.name, monsterKey: gate.monsterName,
@@ -633,8 +671,8 @@ export class Game {
     battle.locked = true;
     battle.itemPanelOpen = false;
     const player = { ...this.state.player };
-    if (def.kind === "hp") player.hp = Math.min(player.maxHp, player.hp + def.amount);
-    else player.mp = Math.min(player.maxMp, player.mp + def.amount);
+    if (def.kind === "hp") player.hp = Math.min(this.effectiveMaxHp(), player.hp + def.amount);
+    else player.mp = Math.min(this.effectiveMaxMp(), player.mp + def.amount);
     const potions = { ...this.state.inventory.potions, [potionId]: count - 1 };
     this.triggerFloatPlayer(battle, `+${def.amount}`, "heal");
     this.state.battle = battle;
@@ -724,6 +762,7 @@ export class Game {
     if (previous) bag = [...bag, previous];
     this.state.player = player;
     this.state.bag = bag;
+    this.clampVitals();
     this.notify();
   }
 
@@ -734,6 +773,7 @@ export class Game {
     delete player.equipment[slot];
     this.state.player = player;
     this.state.bag = [...this.state.bag, item];
+    this.clampVitals();
     this.notify();
   }
 

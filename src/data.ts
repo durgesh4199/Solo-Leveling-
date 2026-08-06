@@ -1,4 +1,4 @@
-import type { GateDef, GateModifier, ItemRarity, ItemSlot, LootItem, PotionDef, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
+import type { AffixKey, GateDef, GateModifier, ItemAffix, ItemRarity, ItemSlot, LootItem, PotionDef, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
 
 /** Ported from the Hunter Protocol design file; extended with a boss name
  *  per gate for the multi-wave encounter system (see buildWavePlan /
@@ -93,19 +93,35 @@ export function rankForLevel(level: number): Rank {
  *  step with how far into the game (E->S) it dropped. */
 const RANK_INDEX: Record<Rank, number> = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5 };
 
+/** Seven tiers, common up to godly. `statMult` scales every affix an item
+ *  rolls (see rollAffixValue); `weight` is its base share of a roll before
+ *  any luck bonus is applied. */
 export const RARITY_META: Record<ItemRarity, { label: string; color: string; weight: number; statMult: number }> = {
-  common: { label: "Common", color: "#9397ab", weight: 0.55, statMult: 1 },
-  rare: { label: "Rare", color: "#968ae0", weight: 0.3, statMult: 1.7 },
-  epic: { label: "Epic", color: "#d2cefd", weight: 0.12, statMult: 2.6 },
-  legendary: { label: "Legendary", color: "#f5c451", weight: 0.03, statMult: 4 }
+  common: { label: "Common", color: "#9397ab", weight: 0.36, statMult: 1 },
+  uncommon: { label: "Uncommon", color: "#7fd88f", weight: 0.26, statMult: 1.35 },
+  rare: { label: "Rare", color: "#6fa8f5", weight: 0.18, statMult: 1.8 },
+  epic: { label: "Epic", color: "#b57bfa", weight: 0.11, statMult: 2.5 },
+  legendary: { label: "Legendary", color: "#f5c451", weight: 0.055, statMult: 3.4 },
+  mythic: { label: "Mythic", color: "#ff6b5b", weight: 0.02, statMult: 4.6 },
+  godly: { label: "Godly", color: "#fef6e4", weight: 0.005, statMult: 6.5 }
+};
+const RARITY_ORDER: ItemRarity[] = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "godly"];
+
+/** How many affix rolls an item gets, by rarity - the higher the tier, the
+ *  more of the "and more" (HP/MP/crit, on top of the core stats) shows up
+ *  on a single piece. */
+const AFFIX_COUNT_BY_RARITY: Record<ItemRarity, number> = {
+  common: 1, uncommon: 1, rare: 2, epic: 2, legendary: 3, mythic: 3, godly: 4
 };
 
 const SLOT_ICON: Record<ItemSlot, string> = {
-  weapon: "sword", armor: "shield-checkered", ring: "circle-dashed", amulet: "moon-stars"
+  weapon: "sword", helmet: "helmet", chest: "shield-checkered", legs: "boots", ring: "circle-dashed", amulet: "moon-stars"
 };
 const SLOT_BASES: Record<ItemSlot, string[]> = {
   weapon: ["Dagger", "Blade", "Fang", "Cleaver", "Piercer"],
-  armor: ["Leather", "Mail", "Plate", "Cloak", "Hide"],
+  helmet: ["Helm", "Hood", "Circlet", "Visor", "Crown"],
+  chest: ["Leather", "Mail", "Plate", "Cloak", "Hide"],
+  legs: ["Greaves", "Leggings", "Chausses", "Wraps", "Guards"],
   ring: ["Band", "Loop", "Signet", "Ring"],
   amulet: ["Amulet", "Pendant", "Talisman", "Charm"]
 };
@@ -116,6 +132,9 @@ const STAT_PREFIX: Record<StatKey, string[]> = {
   vit: ["Sturdy", "Vital", "Stalwart"],
   per: ["Keen", "Watchful", "Sharp"]
 };
+/** Used when an item's chosen "primary" affix is HP/MP/crit rather than a
+ *  core stat - those don't have a themed prefix pool of their own. */
+const GENERIC_PREFIX = ["Warding", "Blessed", "Radiant", "Hale", "Vital"];
 const SUFFIXES = ["of the Depths", "of the Hunt", "of Shadows", "of the Wolf", "of Ruin"];
 const RARE_SUFFIXES = ["of the Abyss", "of the Monarch", "of the Void", "of Eternity", "of the Fallen"];
 
@@ -123,11 +142,18 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+/** `bonus` (0..~1) skews the roll toward the top of the table - each tier
+ *  above common gets a share of it, heavier at the tiers closest to
+ *  common so a "generous" modifier mostly turns commons into uncommons/
+ *  rares rather than routinely handing out godly gear. */
 export function rollRarity(bonus = 0): ItemRarity {
   const weights: [ItemRarity, number][] = [
+    ["godly", RARITY_META.godly.weight + bonus * 0.15],
+    ["mythic", RARITY_META.mythic.weight + bonus * 0.3],
     ["legendary", RARITY_META.legendary.weight + bonus * 0.5],
     ["epic", RARITY_META.epic.weight + bonus * 0.8],
     ["rare", RARITY_META.rare.weight + bonus],
+    ["uncommon", RARITY_META.uncommon.weight + bonus * 0.6],
     ["common", RARITY_META.common.weight]
   ];
   const total = weights.reduce((sum, [, w]) => sum + Math.max(0, w), 0);
@@ -139,31 +165,71 @@ export function rollRarity(bonus = 0): ItemRarity {
   return "common";
 }
 
-/** Generates a fully-named, ready-to-equip item. `rank` scales its base
- *  power, `rarity` scales the multiplier and unlocks the dramatic suffix
- *  pool at epic+. */
+const CORE_STATS: StatKey[] = ["str", "agi", "int", "vit", "per"];
+const AFFIX_POOL: AffixKey[] = [...CORE_STATS, "hp", "mp", "crit"];
+
+/** hp/mp affixes are flat pool bonuses (naturally bigger numbers) and crit
+ *  is a capped percentage - each gets its own scale off the same
+ *  rank/rarity power budget the core stats use, so a "+22 Max HP" and a
+ *  "+5 STR" roll of the same rarity feel comparably strong. */
+function rollAffixValue(key: AffixKey, rankPower: number, statMult: number): number {
+  const jitter = 0.8 + Math.random() * 0.4;
+  if (key === "hp") return Math.max(4, Math.round(rankPower * statMult * 4.2 * jitter));
+  if (key === "mp") return Math.max(2, Math.round(rankPower * statMult * 1.5 * jitter));
+  if (key === "crit") return Math.min(12, Math.max(1, Math.round(rankPower * statMult * 0.32 * jitter)));
+  return Math.max(1, Math.round(rankPower * statMult * jitter));
+}
+
+/** Generates a fully-named, ready-to-equip item with 1-4 random affixes
+ *  (see AFFIX_COUNT_BY_RARITY) - `rank` sets the power budget, `rarity`
+ *  scales it and how many rolls the item gets. */
 export function generateLoot(rank: Rank, rarity: ItemRarity): LootItem {
-  const slot = pick<ItemSlot>(["weapon", "armor", "ring", "amulet"]);
-  const statKey = pick<StatKey>(["str", "agi", "int", "vit", "per"]);
+  const slot = pick<ItemSlot>(["weapon", "helmet", "chest", "legs", "ring", "amulet"]);
+  const rankPower = 3 + RANK_INDEX[rank] * 2;
+  const affixCount = AFFIX_COUNT_BY_RARITY[rarity];
+  const pool = [...AFFIX_POOL];
+  const affixes: ItemAffix[] = [];
+  for (let i = 0; i < affixCount && pool.length > 0; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    const key = pool.splice(idx, 1)[0];
+    affixes.push({ key, value: rollAffixValue(key, rankPower, RARITY_META[rarity].statMult) });
+  }
+
+  const primary = affixes.find((a): a is ItemAffix & { key: StatKey } => (CORE_STATS as string[]).includes(a.key));
   const base = pick(SLOT_BASES[slot]);
-  const prefix = pick(STAT_PREFIX[statKey]);
-  const useDramaticSuffix = rarity === "epic" || rarity === "legendary";
+  const prefix = primary ? pick(STAT_PREFIX[primary.key]) : pick(GENERIC_PREFIX);
+  const useDramaticSuffix = RARITY_ORDER.indexOf(rarity) >= RARITY_ORDER.indexOf("epic");
   const suffix = Math.random() < 0.7 ? pick(useDramaticSuffix ? RARE_SUFFIXES : SUFFIXES) : "";
   const name = suffix ? `${prefix} ${base} ${suffix}` : `${prefix} ${base}`;
-  const rankPower = 3 + RANK_INDEX[rank] * 2;
-  const statBonus = Math.max(1, Math.round(rankPower * RARITY_META[rarity].statMult));
+
   return {
     id: `item-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
-    name, slot, rarity, statKey, statBonus,
+    name, slot, rarity, affixes,
     icon: SLOT_ICON[slot]
   };
 }
 
-/** Gold price for a shop-listed item - scales directly off the stat power
- *  already baked into it by generateLoot (which folds in both rank and
- *  rarity), so pricing never drifts out of step with those two systems. */
+/** Renders one affix as display text - "+5 STR", "+22 Max HP", "+3% Crit". */
+export function affixText(a: ItemAffix): string {
+  if (a.key === "hp") return `+${a.value} Max HP`;
+  if (a.key === "mp") return `+${a.value} Max MP`;
+  if (a.key === "crit") return `+${a.value}% Crit`;
+  return `+${a.value} ${a.key.toUpperCase()}`;
+}
+
+/** Gold price for a shop-listed item - each affix is normalized back to a
+ *  comparable "power" unit (undoing the different per-key scaling
+ *  rollAffixValue applies) before pricing, so a piece with two HP/MP
+ *  affixes doesn't quietly cost far more or less than one with two core
+ *  stats of equivalent power. */
 export function priceForItem(item: LootItem): number {
-  return Math.max(15, Math.round(item.statBonus * 9));
+  const power = item.affixes.reduce((sum, a) => {
+    if (a.key === "hp") return sum + a.value / 4.2;
+    if (a.key === "mp") return sum + a.value / 1.5;
+    if (a.key === "crit") return sum + a.value * 3;
+    return sum + a.value;
+  }, 0);
+  return Math.max(15, Math.round(power * 9));
 }
 
 /** Rolls a fresh batch of purchasable gear at the given rank - the Shop's
