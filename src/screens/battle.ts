@@ -394,13 +394,14 @@ export const battleScreen: ScreenModule = (root, game) => {
       const vfxEl = slot.querySelector<HTMLElement>(".vfx-layer")!;
       const flareEl = slot.querySelector<HTMLElement>(".flurry-flare")!;
       const floatEl = slot.querySelector<HTMLElement>(".float-num")!;
+      const nameEl = slot.querySelector<HTMLElement>(".mini-enemy-name")!;
       const hpFill = slot.querySelector<HTMLElement>(".mini-hp-fill")!;
       const hpText = slot.querySelector<HTMLElement>(".mini-hp-text")!;
       const guardBadgeEl = slot.querySelector<HTMLElement>(".guard-badge")!;
 
       slot.style.opacity = unit.alive ? "1" : "0.18";
       slot.style.filter = unit.alive ? "none" : "grayscale(1)";
-      portraitEl.classList.toggle("is-target", unit.uid === firstAliveUid);
+      nameEl.classList.toggle("is-target", unit.uid === firstAliveUid);
       hpFill.style.width = `${Math.round((unit.hp / unit.maxHp) * 100)}%`;
       hpText.textContent = `${unit.hp}/${unit.maxHp}`;
       glowEl.classList.toggle("show", !!unit.glow);

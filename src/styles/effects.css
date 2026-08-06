@@ -23,12 +23,16 @@
    the player/boss so a full group still fits the frame. */
 .arena-portrait.small { width: 76px; height: 76px; }
 
-/* The enemy the next Attack/Skill will hit - a soft accent underline so a
-   group of otherwise-identical enemies still reads as "targeted". */
-.arena-portrait.is-target::after {
-  content: ""; position: absolute; left: 18%; right: 18%; bottom: -8px; height: 2px;
-  background: var(--color-accent-300); border-radius: 2px;
-  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--color-accent) 60%, transparent);
+/* The enemy the next Attack/Skill will hit - underlines its name label so a
+   group of otherwise-identical (or now differently-named) enemies still
+   reads as "targeted". Lives on the name, not the portrait, so it can
+   never collide with whatever sits directly beneath the portrait circle. */
+.mini-enemy-name.is-target {
+  color: var(--color-accent-200);
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-300);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
 }
 
 /* Boss wave: the final, amplified enemy of a gate run - visually set apart
