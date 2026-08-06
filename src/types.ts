@@ -56,9 +56,15 @@ export type ItemSlot = "weapon" | "helmet" | "chest" | "legs" | "ring" | "amulet
 
 /** What a single roll on an item actually grants. The five core stats
  *  work like before (folds into effectiveStat); `hp`/`mp` are flat, direct
- *  max-HP/max-MP bonuses (not funneled through a stat point), and `crit`
- *  is a flat percentage-point bonus to crit chance. */
-export type AffixKey = StatKey | "hp" | "mp" | "crit";
+ *  max-HP/max-MP bonuses (not funneled through a stat point); `crit` is a
+ *  flat percentage-point bonus to crit chance. The rest are combat-round
+ *  affixes, each with a real mechanical effect (see Game.equipmentAffixSum
+ *  and its call sites in store.ts) rather than a passive stat bump:
+ *  `lifeSteal` heals a % of damage the player's own hits deal, `attackSpeed`
+ *  is a % chance of an immediate follow-up strike on Attack, `manaRegen`
+ *  restores flat MP once a round completes, `fireDamage` adds flat bonus
+ *  damage to every player hit (Attack and Skills alike). */
+export type AffixKey = StatKey | "hp" | "mp" | "crit" | "lifeSteal" | "attackSpeed" | "manaRegen" | "fireDamage";
 export interface ItemAffix {
   key: AffixKey;
   value: number;

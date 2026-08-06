@@ -1,5 +1,5 @@
 import { ARCHETYPE_BY_RANK, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
-import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
+import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 import { evaluateCondition } from "./systems/progress/conditions";
 import type { ProgressContext } from "./systems/progress/types";
 import { COUNTER_KEYS } from "./systems/progress/types";
@@ -152,8 +152,13 @@ export class Game {
     return value;
   }
 
-  /** Sum of a non-core-stat affix (hp/mp/crit) across every equipped slot. */
-  private equipmentAffixSum(key: "hp" | "mp" | "crit"): number {
+  /** Sum of a non-core-stat affix across every equipped slot - hp/mp/crit
+   *  are passive bonuses folded into effectiveMaxHp/effectiveMaxMp/
+   *  critChance; lifeSteal/attackSpeed/manaRegen/fireDamage are combat-
+   *  round affixes applied directly where they act (see battleAttack,
+   *  useSkill, enemyTurn, and the applyLifeSteal/rollBasicAttack helpers
+   *  below). */
+  private equipmentAffixSum(key: Exclude<AffixKey, StatKey>): number {
     const p = this.state.player;
     let sum = 0;
     for (const item of Object.values(p.equipment)) {
@@ -665,8 +670,11 @@ export class Game {
 
   /** Applies damage to one enemy unit; grants its XP/gold/loot and fires
    *  the dissolve fx if it dies. A unit currently guarding (AI-chosen)
-   *  halves the hit and spends one round of its guard on it. */
-  private applyDamage(battle: BattleState, unit: EnemyUnit, dmg: number, isCrit = false) {
+   *  halves the hit and spends one round of its guard on it. Returns the
+   *  damage actually dealt (post-guard-mitigation) - callers that need to
+   *  know the real number (life steal) use this instead of the `dmg` they
+   *  passed in, which may have since been halved. */
+  private applyDamage(battle: BattleState, unit: EnemyUnit, dmg: number, isCrit = false): number {
     if (unit.guardRounds > 0) {
       dmg = Math.max(1, Math.round(dmg * 0.5));
       unit.guardRounds -= 1;
@@ -685,6 +693,43 @@ export class Game {
       this.emitFx({ kind: "dissolve", side: "enemy", targetUid: unit.uid });
       this.grantKillRewards(battle, unit);
     }
+    return dmg;
+  }
+
+  /** Rolls one basic-Attack hit's damage + crit result against a target -
+   *  shared by the primary Attack and an equipped Attack Speed affix's
+   *  chance at an immediate follow-up strike (see battleAttack), so the
+   *  two can never drift out of sync with each other. */
+  private rollBasicAttack(target: EnemyUnit): { dmg: number; isCrit: boolean } {
+    const isCrit = this.rollCrit();
+    let dmg = Math.max(1, Math.round(
+      6 + this.effectiveStat("str") * STAT_TUNING.strAtkPerPoint + this.equipmentAffixSum("fireDamage")
+      - target.def + (Math.random() * 4 - 2)
+    ));
+    if (isCrit) dmg = Math.round(dmg * 1.8);
+    return { dmg, isCrit };
+  }
+
+  /** Heals the player for a % of damage their own hit just dealt, if a
+   *  Life Steal affix is equipped - deliberately not applied to the
+   *  deployed Shadow's own strikes (companionStrike), since it's the
+   *  Hunter's gear doing the stealing, not the Shadow's. No-ops (no float,
+   *  no state write) when there's nothing to heal, including "already at
+   *  full HP", so it can be called unconditionally after every player hit
+   *  without spamming a "+0" float. */
+  private applyLifeSteal(battle: BattleState, damageDealt: number) {
+    if (damageDealt <= 0) return;
+    const pct = this.equipmentAffixSum("lifeSteal");
+    if (pct <= 0) return;
+    const rawHeal = Math.round(damageDealt * (pct / 100));
+    if (rawHeal <= 0) return;
+    const maxHp = this.effectiveMaxHp();
+    const player = { ...this.state.player };
+    const healed = Math.min(maxHp, player.hp + rawHeal) - player.hp;
+    if (healed <= 0) return;
+    player.hp += healed;
+    this.state.player = player;
+    this.triggerFloatPlayer(battle, `+${healed}`, "heal");
   }
 
   /** A deployed Shadow auto-assists every player action, striking whatever
@@ -746,6 +791,17 @@ export class Game {
       if (!battle || battle.over) return;
       if (i >= attackers.length) {
         const guardRounds = Math.max(0, battle.guardRounds - (wasGuardingRound ? 1 : 0));
+        // Mana Regen affix - ticks once per completed round (every enemy
+        // that's going to act this round has), not per player action, so
+        // it restores MP even on a round where the player just Attacked
+        // rather than cast a Skill. No float text - the MP bar filling a
+        // little every round is feedback enough without a "+2" spam on
+        // top of whatever else just happened.
+        const manaRegen = this.equipmentAffixSum("manaRegen");
+        if (manaRegen > 0 && this.state.player.mp < this.effectiveMaxMp()) {
+          const maxMp = this.effectiveMaxMp();
+          this.state.player = { ...this.state.player, mp: Math.min(maxMp, this.state.player.mp + manaRegen) };
+        }
         this.state.battle = { ...battle, guardRounds, locked: false };
         this.notify();
         return;
@@ -846,12 +902,26 @@ export class Game {
       return;
     }
 
-    const isCrit = this.rollCrit();
-    let dmg = Math.max(1, Math.round(6 + this.effectiveStat("str") * STAT_TUNING.strAtkPerPoint - target.def + (Math.random() * 4 - 2)));
-    if (isCrit) dmg = Math.round(dmg * 1.8);
+    const { dmg, isCrit } = this.rollBasicAttack(target);
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy: isCrit });
     this.setUnitVfx(target, isCrit ? "flurry" : "slash");
-    this.applyDamage(battle, target, dmg, isCrit);
+    const dealtDmg = this.applyDamage(battle, target, dmg, isCrit);
+    this.applyLifeSteal(battle, dealtDmg);
+
+    // Attack Speed affix - a % chance at an immediate follow-up strike on
+    // the same target, scoped to the basic Attack only (Skills already
+    // have their own fixed "cast" feel via base/scale). No extra lunge/
+    // shake for the follow-up - it reads as a fast second hit landing
+    // right on top of the first, the same restrained treatment
+    // companionStrike already uses for the Shadow's own hit.
+    const atkSpeedPct = this.equipmentAffixSum("attackSpeed");
+    if (atkSpeedPct > 0 && target.alive && Math.random() * 100 < atkSpeedPct) {
+      const extra = this.rollBasicAttack(target);
+      this.setUnitVfx(target, extra.isCrit ? "flurry" : "slash");
+      const extraDealt = this.applyDamage(battle, target, extra.dmg, extra.isCrit);
+      this.applyLifeSteal(battle, extraDealt);
+    }
+
     this.companionStrike(battle);
     this.state.battle = battle;
     this.notify();
@@ -887,15 +957,18 @@ export class Game {
     }
 
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy });
+    const fireDamage = this.equipmentAffixSum("fireDamage");
+    let totalDealt = 0;
     for (const target of targets) {
       const isCrit = this.rollCrit();
-      let dmg = Math.max(1, Math.round(skillDef.base + str * skillDef.scale - target.def + (Math.random() * 4 - 2)));
+      let dmg = Math.max(1, Math.round(skillDef.base + str * skillDef.scale + fireDamage - target.def + (Math.random() * 4 - 2)));
       if (skillDef.kind === "execute" && target.hp <= target.maxHp * 0.3) dmg *= 2;
       if (isCrit) dmg = Math.round(dmg * 1.8);
       this.setUnitVfx(target, skillDef.kind === "single" && !isCrit ? "slash" : "flurry");
-      this.applyDamage(battle, target, dmg, isCrit);
+      totalDealt += this.applyDamage(battle, target, dmg, isCrit);
       this.clearHitFlagLater(target.uid);
     }
+    this.applyLifeSteal(battle, totalDealt);
     this.companionStrike(battle);
 
     this.state.battle = battle;

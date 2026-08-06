@@ -191,9 +191,19 @@ One deploy slot; deploying a new Shadow auto-recalls the previous one.
   odds at top tiers an E-rank trash kill just doesn't.
 - **Affixes**: 1-4 rolls per item (by rarity, `AFFIX_COUNT_BY_RARITY`),
   each either a core stat (folds into `effectiveStat()`, identical to a
-  spent stat point) or a direct flat `hp`/`mp`/`crit` bonus. A VIT/INT
+  spent stat point), a direct flat `hp`/`mp`/`crit` bonus, or one of 4
+  combat-round affixes (`lifeSteal`/`attackSpeed`/`manaRegen`/
+  `fireDamage`) applied directly where they act rather than folded into a
+  passive getter - see `Game.applyLifeSteal`/`rollBasicAttack` and the
+  mana-regen tick in `enemyTurn`'s round-completion branch. A VIT/INT
   affix converts to HP/MP through the exact same `STAT_TUNING` rate a
-  spent stat point does — the two systems can't drift apart.
+  spent stat point does — the two systems can't drift apart. Every
+  `AffixKey` needs a case in `affixText`/`affixDeltaText`/`priceForItem`
+  in data.ts *and* wherever it actually acts in store.ts - `rollAffixValue`
+  alone isn't enough to make an affix real (see the "no placeholders"
+  discipline in EXPANSION_ROADMAP.md's item #4 entry: Sockets/Cooldown
+  Reduction/Poison were deliberately left out of the pool rather than
+  added as rolls that do nothing).
 - **"Effective" pattern**: `effectiveStat()`, `effectiveMaxHp()`,
   `effectiveMaxMp()`, `critChance` all fold in equipment at *read* time;
   raw `player.maxHp`/stat fields stay pure (equipment-free). `clampVitals()`

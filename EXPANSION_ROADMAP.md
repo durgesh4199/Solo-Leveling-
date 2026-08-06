@@ -102,11 +102,55 @@ touching anything below.
    verified via Node scripts against real game data - comparison deltas
    for gains/losses/identical items/stable key ordering, and sort output
    for all four modes including a no-mutation check on the source array.
-4. **Equipment affix system** — pending. *(Note: a first version of
-   affixes already exists - `ItemAffix`/`rollAffixValue` in `data.ts`,
-   1-4 rolls per item, core stats + hp/mp/crit. This item is about
-   expanding it - see brief's list of new affix types - not building it
-   from scratch.)*
+4. **Equipment affix system** — ✅ **Done** (partially - see deferrals
+   below, each with a stated reason rather than a silent drop). Extended
+   `AffixKey` with 4 new, fully functional combat-round affixes, each
+   wired into real combat math (not a passive stat bump the way hp/mp/crit
+   are) and covered by a live-`Game` integration test, not just unit math:
+   - **Life Steal** — heals the player for a % of damage their own hit
+     (Attack or Skill) deals; `applyLifeSteal()`. Deliberately excludes
+     the deployed Shadow's own strikes - it's the Hunter's gear doing the
+     stealing.
+   - **Attack Speed** — a % chance of an immediate follow-up strike on the
+     same target, scoped to the basic Attack only (Skills keep their own
+     fixed base/scale "cast" feel). Verified the proc gate is a real
+     probability check (a low roll provably does *not* proc), not
+     always-on.
+   - **Mana Regen** — flat MP restored once a full round completes (every
+     enemy in the wave has acted), not per player action - so it still
+     ticks on a round where the player just used Attack. No float text (a
+     "+N MP" every single round would be visual noise); the MP bar
+     filling is feedback enough.
+   - **Fire Damage** — flat bonus damage added to every player hit,
+     Attack and Skills alike, before the crit multiplier (so a crit
+     amplifies it too, same as the STR term). Deliberately has **no**
+     elemental/burn mechanic behind it (see deferrals) - it's honest,
+     functional bonus damage, not a stub pretending to be something bigger.
+   - `priceForItem` extended to price all 4 correctly (each normalized
+     back to the same power unit the core stats use, matching the
+     existing hp/mp/crit pattern) so Shop prices and sell-back value stay
+     consistent for gear rolling the new affixes.
+
+   **Deferred, not dropped** - each needs infrastructure this milestone
+   didn't build and that isn't its own item in the fixed order:
+   - **Poison** (and Fire/elemental damage *as a DoT*, distinct from the
+     flat Fire Damage bonus above) needs a real status-effect/DoT system -
+     a per-round damage tick with duration/stacking - which doesn't exist
+     yet and isn't its own item in the fixed 20. Building one as a side
+     effect of "equipment affixes" would be exactly the kind of unrelated-
+     system scope creep the standing rules rule out. Worth raising with
+     the project owner as a future item if wanted.
+   - **Cooldown Reduction** is meaningless today - Skills have no cooldown
+     at all (only MP cost gates them), so a CDR affix would either be a
+     silent no-op (forbidden - "no placeholders") or force inventing a
+     whole skill-cooldown mechanic as a side effect of an itemization
+     milestone. Revisit once/if a cooldown mechanic exists (Talent Tree
+     or a combat-depth item are the more natural homes for that).
+   - **Sockets** are empty affix slots meant to be filled by a Crafting
+     gem (#14, not yet built). Adding an empty, currently-unfillable
+     socket now would itself be the textbook placeholder the standing
+     rules forbid. Build this when Crafting exists to give it something
+     to do.
 
 ### Phase 2 — Shadows
 5. Shadow Collection — pending.

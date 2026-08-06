@@ -269,17 +269,25 @@ export function rollRarity(bonus = 0): ItemRarity {
 }
 
 const CORE_STATS: StatKey[] = ["str", "agi", "int", "vit", "per"];
-const AFFIX_POOL: AffixKey[] = [...CORE_STATS, "hp", "mp", "crit"];
+const AFFIX_POOL: AffixKey[] = [...CORE_STATS, "hp", "mp", "crit", "lifeSteal", "attackSpeed", "manaRegen", "fireDamage"];
 
-/** hp/mp affixes are flat pool bonuses (naturally bigger numbers) and crit
- *  is a capped percentage - each gets its own scale off the same
+/** hp/mp affixes are flat pool bonuses (naturally bigger numbers), crit/
+ *  lifeSteal/attackSpeed are capped percentages, manaRegen/fireDamage are
+ *  smaller flat bonuses (a per-round tick and a per-hit addition rather
+ *  than a one-time pool) - each gets its own scale off the same
  *  rank/rarity power budget the core stats use, so a "+22 Max HP" and a
- *  "+5 STR" roll of the same rarity feel comparably strong. */
+ *  "+5 STR" roll of the same rarity feel comparably strong. Caps keep the
+ *  percentage-based combat affixes (life steal, attack speed) from ever
+ *  becoming a build-defining single roll even at godly rarity. */
 function rollAffixValue(key: AffixKey, rankPower: number, statMult: number): number {
   const jitter = 0.8 + Math.random() * 0.4;
   if (key === "hp") return Math.max(4, Math.round(rankPower * statMult * 4.2 * jitter));
   if (key === "mp") return Math.max(2, Math.round(rankPower * statMult * 1.5 * jitter));
   if (key === "crit") return Math.min(12, Math.max(1, Math.round(rankPower * statMult * 0.32 * jitter)));
+  if (key === "lifeSteal") return Math.min(15, Math.max(1, Math.round(rankPower * statMult * 0.28 * jitter)));
+  if (key === "attackSpeed") return Math.min(20, Math.max(1, Math.round(rankPower * statMult * 0.35 * jitter)));
+  if (key === "manaRegen") return Math.max(1, Math.round(rankPower * statMult * 0.6 * jitter));
+  if (key === "fireDamage") return Math.max(1, Math.round(rankPower * statMult * 1.1 * jitter));
   return Math.max(1, Math.round(rankPower * statMult * jitter));
 }
 
@@ -317,6 +325,10 @@ export function affixText(a: ItemAffix): string {
   if (a.key === "hp") return `+${a.value} Max HP`;
   if (a.key === "mp") return `+${a.value} Max MP`;
   if (a.key === "crit") return `+${a.value}% Crit`;
+  if (a.key === "lifeSteal") return `+${a.value}% Life Steal`;
+  if (a.key === "attackSpeed") return `+${a.value}% Attack Speed`;
+  if (a.key === "manaRegen") return `+${a.value} MP Regen`;
+  if (a.key === "fireDamage") return `+${a.value} Fire Damage`;
   return `+${a.value} ${a.key.toUpperCase()}`;
 }
 
@@ -368,6 +380,10 @@ export function affixDeltaText(d: AffixDelta): string {
   if (d.key === "hp") return `${sign}${d.delta} Max HP`;
   if (d.key === "mp") return `${sign}${d.delta} Max MP`;
   if (d.key === "crit") return `${sign}${d.delta}% Crit`;
+  if (d.key === "lifeSteal") return `${sign}${d.delta}% Life Steal`;
+  if (d.key === "attackSpeed") return `${sign}${d.delta}% Attack Speed`;
+  if (d.key === "manaRegen") return `${sign}${d.delta} MP Regen`;
+  if (d.key === "fireDamage") return `${sign}${d.delta} Fire Damage`;
   return `${sign}${d.delta} ${d.key.toUpperCase()}`;
 }
 
@@ -381,6 +397,10 @@ export function priceForItem(item: LootItem): number {
     if (a.key === "hp") return sum + a.value / 4.2;
     if (a.key === "mp") return sum + a.value / 1.5;
     if (a.key === "crit") return sum + a.value * 3;
+    if (a.key === "lifeSteal") return sum + a.value / 0.28;
+    if (a.key === "attackSpeed") return sum + a.value / 0.35;
+    if (a.key === "manaRegen") return sum + a.value / 0.6;
+    if (a.key === "fireDamage") return sum + a.value / 1.1;
     return sum + a.value;
   }, 0);
   return Math.max(15, Math.round(power * 9));

@@ -80,10 +80,14 @@ engine, no external art/font dependencies — built to run on:
   pulses gold on Status whenever it goes up
 - **Equipment** — 6 slots (Weapon, Helmet, Body Armor, Legs, Ring, Amulet),
   each item rolling 1-4 random affixes depending on rarity: the five core
-  stats (folds into effectiveStat, same as a stat point) *and* direct,
-  flat HP/MP/Crit bonuses ("+22 Max HP", "+3% Crit") that don't cost a
-  stat point at all - a VIT/INT affix converts to HP/MP at the exact same
-  rate a spent stat point does, so the two systems never feel inconsistent
+  stats (folds into effectiveStat, same as a stat point), direct flat
+  HP/MP/Crit bonuses ("+22 Max HP", "+3% Crit") that don't cost a stat
+  point at all, and four combat affixes with a real in-battle effect -
+  **Life Steal** (heal a % of your own damage dealt), **Attack Speed** (a
+  chance at an immediate follow-up strike on Attack), **Mana Regen** (MP
+  restored every round), and **Fire Damage** (flat bonus damage on every
+  hit). A VIT/INT affix converts to HP/MP at the exact same rate a spent
+  stat point does, so the two systems never feel inconsistent
 - **Rarity** — 7 tiers, common up to godly (common → uncommon → rare →
   epic → legendary → mythic → godly), each both rarer and a bigger
   multiplier on every affix it rolls than the last. Base odds off a plain
