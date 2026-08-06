@@ -18,6 +18,9 @@ export type FxEvent =
 type Listener = () => void;
 type FxListener = (e: FxEvent) => void;
 
+/** How often the Shop's stock restocks itself for free, in real time. */
+const SHOP_AUTO_RESTOCK_MS = 10 * 60 * 1000;
+
 const INITIAL_STATE: GameState = {
   screen: "title",
   player: {
@@ -30,7 +33,7 @@ const INITIAL_STATE: GameState = {
   shadowArmy: [],
   inventory: { potions: { hp_minor: 3, mp_minor: 1 } },
   bag: [],
-  shop: { stock: [], rerollCost: 60 },
+  shop: { stock: [], rerollCost: 60, lastRerollAt: 0 },
   battle: null
 };
 
@@ -63,6 +66,10 @@ export class Game {
     // First stock is free - a fresh Hunter shouldn't open the Shop to
     // nothing for sale.
     this.rerollShop(true);
+    // Checked periodically rather than with a single long-lived timer tied
+    // to one specific restock, so it stays correct even across however
+    // many manual (paid) rerolls happen in between.
+    setInterval(() => this.checkShopAutoRestock(), 15000);
   }
 
   subscribe(fn: Listener): () => void {
@@ -782,21 +789,40 @@ export class Game {
     this.notify();
   }
 
-  discardItem(itemId: string) {
+  /** The bag has no free "discard" - the only way an item leaves it (short
+   *  of equipping it) is selling for a fifth of its Shop price. */
+  sellItem(itemId: string) {
+    const item = this.state.bag.find((i) => i.id === itemId);
+    if (!item) return;
+    const price = Math.max(1, Math.round(priceForItem(item) / 5));
+    this.state.player = { ...this.state.player, gold: this.state.player.gold + price };
     this.state.bag = this.state.bag.filter((i) => i.id !== itemId);
     this.notify();
   }
 
   /** Rerolls the Shop's equipment stock at the player's current rank.
-   *  `free` skips the gold cost - used only for the very first stock. */
+   *  `free` skips the gold cost - used for the very first stock and the
+   *  automatic 10-minute restock. Either way it resets the restock clock. */
   rerollShop(free = false) {
     if (!free) {
       if (this.state.player.gold < this.state.shop.rerollCost) return;
       this.state.player = { ...this.state.player, gold: this.state.player.gold - this.state.shop.rerollCost };
     }
     const rank = rankForLevel(this.state.player.level);
-    this.state.shop = { ...this.state.shop, stock: rollShopStock(rank) };
+    this.state.shop = { ...this.state.shop, stock: rollShopStock(rank), lastRerollAt: Date.now() };
     this.notify();
+  }
+
+  private checkShopAutoRestock() {
+    if (Date.now() - this.state.shop.lastRerollAt >= SHOP_AUTO_RESTOCK_MS) {
+      this.rerollShop(true);
+    }
+  }
+
+  /** Milliseconds left until the Shop's free auto-restock - the Shop tab
+   *  ticks a "Free restock in mm:ss" countdown off this. */
+  shopRestockMsRemaining(): number {
+    return Math.max(0, SHOP_AUTO_RESTOCK_MS - (Date.now() - this.state.shop.lastRerollAt));
   }
 
   buyShopItem(itemId: string) {

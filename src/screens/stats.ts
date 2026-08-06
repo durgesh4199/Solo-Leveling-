@@ -5,8 +5,8 @@ import { rankForLevel, STAT_DEFS, STAT_TUNING } from "../data";
 import type { StatKey } from "../types";
 
 /** What a single point in this stat actually buys, in concrete numbers -
- *  shown as a floating confirmation the moment you spend the point, so
- *  "+1 STR" isn't just a bigger number on a row, it's a visible payoff. */
+ *  previewed on hover (before you commit) and floated as a confirmation
+ *  the moment you spend the point, so "+1 STR" is never a guess. */
 function gainText(stat: StatKey): string {
   const t = STAT_TUNING;
   switch (stat) {
@@ -62,19 +62,37 @@ export const statsScreen: ScreenModule = (root, game) => {
     </div>
   `).join("");
 
-  rowsContainer.querySelectorAll<HTMLElement>('[data-action="add-stat"]').forEach((btn) => {
+  rowsContainer.querySelectorAll<HTMLButtonElement>('[data-action="add-stat"]').forEach((btn) => {
+    const stat = btn.dataset.stat as StatKey;
+    const toast = btn.closest(".stat-row")?.querySelector<HTMLElement>(".stat-gain-toast");
+
+    // Hover previews the payoff *before* you commit the point - "what am
+    // I about to buy", not just "what did I just buy".
+    btn.addEventListener("mouseenter", () => {
+      if (!toast || btn.disabled) return;
+      toast.textContent = gainText(stat);
+      toast.classList.remove("show");
+      toast.style.display = "block";
+    });
+    btn.addEventListener("mouseleave", () => {
+      if (!toast || toast.dataset.animating === "1") return;
+      toast.style.display = "none";
+    });
+
     btn.addEventListener("click", () => {
       if (game.state.player.statPoints <= 0) return;
-      const stat = btn.dataset.stat as StatKey;
       game.addStat(stat);
-      const toast = btn.closest(".stat-row")?.querySelector<HTMLElement>(".stat-gain-toast");
       if (toast) {
         toast.textContent = gainText(stat);
         toast.style.display = "block";
+        toast.dataset.animating = "1";
         toast.classList.remove("show");
         void toast.offsetWidth; // restart the animation on repeat clicks
         toast.classList.add("show");
-        setTimeout(() => { toast.style.display = "none"; }, 1000);
+        setTimeout(() => {
+          toast.dataset.animating = "0";
+          toast.style.display = "none";
+        }, 1000);
       }
     });
   });

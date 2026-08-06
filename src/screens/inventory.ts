@@ -12,14 +12,16 @@ const SLOT_ICON: Record<ItemSlot, string> = {
   weapon: "sword", helmet: "helmet", chest: "shield-checkered", legs: "boots", ring: "circle-dashed", amulet: "moon-stars"
 };
 /** Grid position (see .paperdoll in effects.css) for each of the 6 slots
- *  around the center portrait - a vertical head/chest/legs "body" column
- *  flanked by amulet/ring up top and the weapon at the side, echoing the
- *  reference equipment-grid layout scaled to the gear this game has. */
+ *  around the center portrait. Weapon/Ring flank the portrait on the same
+ *  row so the row's connector line has a real tile at both ends; Amulet/
+ *  Helmet sit above, Body Armor/Legs stack below - a "body" column down
+ *  the middle, echoing the reference equipment-grid layout scaled to the
+ *  gear this game has. */
 const PAPERDOLL_POS: Record<ItemSlot, string> = {
   amulet: "grid-column:1;grid-row:1;",
   helmet: "grid-column:2;grid-row:1;",
-  ring: "grid-column:3;grid-row:1;",
   weapon: "grid-column:1;grid-row:2;",
+  ring: "grid-column:3;grid-row:2;",
   chest: "grid-column:2;grid-row:3;",
   legs: "grid-column:2;grid-row:4;"
 };
@@ -36,13 +38,22 @@ function affixSummary(item: LootItem): string {
   return item.affixes.map(affixText).join(" · ");
 }
 
-/** Not a `simpleScreen` - both the sub-tab selection and the bag's filters
- *  are pure view state that has nothing to do with the game store, so they
- *  live in a closure here instead of round-tripping through `game.notify()`. */
+function formatCountdown(ms: number): string {
+  const totalSec = Math.ceil(ms / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+/** Not a `simpleScreen` - the sub-tab selection, the bag's filters, and the
+ *  Shop's live restock countdown are all pure view state (or a UI-only
+ *  ticking clock) that has nothing to do with the game store, so they live
+ *  in a closure here instead of round-tripping through `game.notify()`. */
 export const inventoryScreen: ScreenModule = (root, game) => {
   let subTab: SubTab = "gear";
   let slotFilter: ItemSlot | "all" = "all";
   let rarityFilter: ItemRarity | "all" = "all";
+  let countdownTimer: ReturnType<typeof setInterval> | null = null;
 
   const subTabBtn = (tab: SubTab, label: string, iconName: string) => `
     <button class="btn ${subTab === tab ? "btn-primary" : "btn-secondary"} action-btn" data-subtab="${tab}"
@@ -72,18 +83,19 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       (rarityFilter === "all" || item.rarity === rarityFilter)
     );
 
-    const filterChip = (active: boolean, label: string, kind: string, value: string) => `
-      <button class="btn ${active ? "btn-primary" : "btn-secondary"} action-btn" data-filter="${kind}" data-value="${value}"
-        style="padding:4px 10px;font-size:11px;justify-content:center;">${label}</button>`;
+    const selectOption = (value: string, label: string, selected: boolean) =>
+      `<option value="${value}" ${selected ? "selected" : ""}>${label}</option>`;
 
     const bagFilters = game.state.bag.length === 0 ? "" : `
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:var(--space-2);">
-        ${filterChip(slotFilter === "all", "All Slots", "slot", "all")}
-        ${SLOT_ORDER.map((s) => filterChip(slotFilter === s, SLOT_LABEL[s], "slot", s)).join("")}
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:var(--space-2);">
-        ${filterChip(rarityFilter === "all", "All Rarities", "rarity", "all")}
-        ${RARITY_ORDER.map((r) => filterChip(rarityFilter === r, RARITY_META[r].label, "rarity", r)).join("")}
+      <div style="display:flex;gap:var(--space-2);margin-bottom:var(--space-3);">
+        <select class="select-filter" data-filter="slot" style="flex:1;">
+          ${selectOption("all", "All Slots", slotFilter === "all")}
+          ${SLOT_ORDER.map((s) => selectOption(s, SLOT_LABEL[s], slotFilter === s)).join("")}
+        </select>
+        <select class="select-filter" data-filter="rarity" style="flex:1;">
+          ${selectOption("all", "All Rarities", rarityFilter === "all")}
+          ${RARITY_ORDER.map((r) => selectOption(r, RARITY_META[r].label, rarityFilter === r)).join("")}
+        </select>
       </div>`;
 
     const bagRows = game.state.bag.length === 0
@@ -92,6 +104,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       ? `<div style="font-size:12px;color:var(--color-neutral-600);padding:var(--space-3) 0;">Nothing matches that filter.</div>`
       : filteredBag.map((item) => {
         const meta = RARITY_META[item.rarity];
+        const sellPrice = Math.max(1, Math.round(priceForItem(item) / 5));
         return `
           <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);">
             <span style="font-size:18px;color:${meta.color};flex-shrink:0;">${icon(item.icon as any)}</span>
@@ -103,7 +116,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
               </div>
             </div>
             <button class="btn btn-icon" style="width:28px;height:28px;flex-shrink:0;color:var(--color-accent-300);" data-action="equip-item" data-item="${item.id}" title="Equip">${icon("check-circle")}</button>
-            <button class="btn btn-icon" style="width:28px;height:28px;flex-shrink:0;color:var(--color-neutral-500);" data-action="discard-item" data-item="${item.id}" title="Discard">${icon("trash")}</button>
+            <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:5px 8px;font-size:10px;" data-action="sell-item" data-item="${item.id}" title="Sell">${icon("coin")} ${sellPrice}g</button>
           </div>`;
       }).join("");
 
@@ -151,12 +164,12 @@ export const inventoryScreen: ScreenModule = (root, game) => {
 
     const canReroll = p.gold >= game.state.shop.rerollCost;
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);">
         <div>
           <h5 style="margin:0;">Merchant Stock</h5>
-          <div style="font-size:11px;color:var(--color-neutral-500);">Buy equipable gear with gold</div>
+          <div style="font-size:11px;color:var(--color-neutral-500);">Free restock in <span id="shop-countdown"></span></div>
         </div>
-        <button class="btn btn-secondary action-btn" style="padding:6px 10px;font-size:11px;" data-action="reroll-shop" ${canReroll ? "" : "disabled"}>
+        <button class="btn btn-secondary action-btn" style="padding:6px 10px;font-size:11px;flex-shrink:0;" data-action="reroll-shop" ${canReroll ? "" : "disabled"}>
           Reroll — ${game.state.shop.rerollCost}g
         </button>
       </div>
@@ -189,7 +202,14 @@ export const inventoryScreen: ScreenModule = (root, game) => {
     `;
   };
 
+  const tickCountdown = () => {
+    const el = root.querySelector<HTMLElement>("#shop-countdown");
+    if (!el) return;
+    el.textContent = formatCountdown(game.shopRestockMsRemaining());
+  };
+
   const draw = () => {
+    if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
     const p = game.state.player;
     const body = subTab === "gear" ? drawGear(p) : subTab === "shop" ? drawShop(p) : drawPotions(p);
 
@@ -217,8 +237,8 @@ export const inventoryScreen: ScreenModule = (root, game) => {
     root.querySelectorAll<HTMLElement>('[data-action="equip-item"]').forEach((el) => {
       el.addEventListener("click", () => game.equipItem(el.dataset.item!));
     });
-    root.querySelectorAll<HTMLElement>('[data-action="discard-item"]').forEach((el) => {
-      el.addEventListener("click", () => game.discardItem(el.dataset.item!));
+    root.querySelectorAll<HTMLElement>('[data-action="sell-item"]').forEach((el) => {
+      el.addEventListener("click", () => game.sellItem(el.dataset.item!));
     });
     root.querySelectorAll<HTMLElement>('[data-action="unequip-item"]').forEach((el) => {
       el.addEventListener("click", () => game.unequipItem(el.dataset.slot as ItemSlot));
@@ -230,17 +250,27 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       el.addEventListener("click", () => game.buyShopItem(el.dataset.item!));
     });
     root.querySelector<HTMLElement>('[data-action="reroll-shop"]')?.addEventListener("click", () => game.rerollShop());
-    root.querySelectorAll<HTMLElement>('[data-filter]').forEach((el) => {
-      el.addEventListener("click", () => {
+    root.querySelectorAll<HTMLSelectElement>("[data-filter]").forEach((el) => {
+      el.addEventListener("change", () => {
         const kind = el.dataset.filter;
-        const value = el.dataset.value!;
+        const value = el.value;
         if (kind === "slot") slotFilter = value as ItemSlot | "all";
         else if (kind === "rarity") rarityFilter = value as ItemRarity | "all";
         draw();
       });
     });
+
+    if (subTab === "shop") {
+      tickCountdown();
+      countdownTimer = setInterval(tickCountdown, 1000);
+    }
   };
 
   draw();
-  return { update: draw };
+  return {
+    update: draw,
+    unmount() {
+      if (countdownTimer) clearInterval(countdownTimer);
+    }
+  };
 };
