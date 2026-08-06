@@ -1,4 +1,5 @@
-import type { Rank } from "../types";
+import type { Archetype, Rank } from "../types";
+import { ARCHETYPE_BY_RANK } from "../data";
 
 /**
  * Original stylized portrait art: circular vignette + bold dark silhouette
@@ -64,10 +65,9 @@ export function hunterPortrait(): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-/** Goblin Scout — E rank. Small, hunched, pointed ears. */
-export function goblinScoutPortrait(): string {
+/** Goblin archetype — small, hunched, pointed ears. */
+export function goblinScoutPortrait(glow: string): string {
   const uid = `g-${uidSeq++}`;
-  const glow = RANK_GLOW.E;
   const silhouette = `
     <path d="M50 30c-10 0-17 8-17 18 0 6 2.5 10.5 6 13.5-6 4-10 10-10 17v6h42v-6c0-7-4-13-10-17 3.5-3 6-7.5 6-13.5 0-10-7-18-17-18Z"/>
     <path d="M31 40 21 30l4 15 6-3ZM69 40l10-10-4 15-6-3Z" fill="#12131d"/>
@@ -80,10 +80,9 @@ export function goblinScoutPortrait(): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-/** Orc Brute — D rank. Wide shoulders, tusks. */
-export function orcBrutePortrait(): string {
+/** Orc archetype — wide shoulders, tusks. */
+export function orcBrutePortrait(glow: string): string {
   const uid = `o-${uidSeq++}`;
-  const glow = RANK_GLOW.D;
   const silhouette = `
     <path d="M50 24c-11 0-19 8-19 19 0 6 2 11 5.5 14.5-8 4-13.5 11-13.5 19v7h54v-7c0-8-5.5-15-13.5-19 3.5-3.5 5.5-8.5 5.5-14.5 0-11-8-19-19-19Z"/>
   `;
@@ -95,10 +94,9 @@ export function orcBrutePortrait(): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-/** Ice Wraith — C rank. Floating, jagged crystalline cloak, no legs. */
-export function iceWraithPortrait(): string {
+/** Wraith archetype — floating, jagged crystalline cloak, no legs. */
+export function iceWraithPortrait(glow: string): string {
   const uid = `i-${uidSeq++}`;
-  const glow = RANK_GLOW.C;
   const silhouette = `
     <path d="M50 22 40 34l-13-4 7 15-12 8 15 4-4 15 13-9 4 15 4-15 13 9-4-15 15-4-12-8 7-15-13 4Z" fill-opacity="0.9"/>
     <path d="M50 40c-8 0-14 7-14 15 0 10 6 17 14 22 8-5 14-12 14-22 0-8-6-15-14-15Z" fill="#12131d"/>
@@ -109,10 +107,9 @@ export function iceWraithPortrait(): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-/** Blood Knight — B rank. Helmet with brim, pauldrons, cape. */
-export function bloodKnightPortrait(): string {
+/** Knight archetype — helmet with brim, pauldrons, cape. */
+export function bloodKnightPortrait(glow: string): string {
   const uid = `k-${uidSeq++}`;
-  const glow = RANK_GLOW.B;
   const silhouette = `
     <path d="M50 66c14 0 24-6 24-6v18H26V60s10 6 24 6Z" opacity="0.9"/>
     <path d="M28 66c-6 4-9 10-9 17v5h62v-5c0-7-3-13-9-17Z" fill-opacity="0.95"/>
@@ -126,10 +123,9 @@ export function bloodKnightPortrait(): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-/** Shadow Beast — A rank. Feral, clawed, spiked ridge. */
-export function shadowBeastPortrait(): string {
+/** Beast archetype — feral, clawed, spiked ridge. */
+export function shadowBeastPortrait(glow: string): string {
   const uid = `b-${uidSeq++}`;
-  const glow = RANK_GLOW.A;
   const silhouette = `
     <path d="M50 26c-14 0-24 11-24 24 0 9 4 16 10 20-3 4-6 8-6 12v3h40v-3c0-4-3-8-6-12 6-4 10-11 10-20 0-13-10-24-24-24Z"/>
     <path d="m30 30-8-10 2 13 6 1ZM70 30l8-10-2 13-6 1Z" fill="#12131d"/>
@@ -142,10 +138,9 @@ export function shadowBeastPortrait(): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-/** Ancient Wyrm — S rank. Dragon head, horns, flared wings. */
-export function ancientWyrmPortrait(): string {
+/** Wyrm archetype — dragon head, horns, flared wings. */
+export function ancientWyrmPortrait(glow: string): string {
   const uid = `w-${uidSeq++}`;
-  const glow = RANK_GLOW.S;
   const silhouette = `
     <path d="M10 55c10-8 18-6 22-2 4-10 12-19 18-19s14 9 18 19c4-4 12-6 22 2-8 2-14 6-16 10 2 6 2 12-2 17-6-4-10-9-12-14-4 4-8 6-12 6s-8-2-12-6c-2 5-6 10-12 14-4-5-4-11-2-17-2-4-8-8-16-10Z"/>
     <path d="M42 34 46 20l4 12ZM58 34l-4-14-4 12Z" fill="#e7e5fe" fill-opacity="0.85" stroke="none"/>
@@ -157,18 +152,23 @@ export function ancientWyrmPortrait(): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-const ENEMY_PORTRAITS: Record<string, () => string> = {
-  "Goblin Scout": goblinScoutPortrait,
-  "Orc Brute": orcBrutePortrait,
-  "Ice Wraith": iceWraithPortrait,
-  "Blood Knight": bloodKnightPortrait,
-  "Shadow Beast": shadowBeastPortrait,
-  "Ancient Wyrm": ancientWyrmPortrait
+const ARCHETYPE_PORTRAITS: Record<Archetype, (glow: string) => string> = {
+  goblin: goblinScoutPortrait,
+  orc: orcBrutePortrait,
+  wraith: iceWraithPortrait,
+  knight: bloodKnightPortrait,
+  beast: shadowBeastPortrait,
+  wyrm: ancientWyrmPortrait
 };
 
-export function enemyPortrait(monsterName: string): string {
-  const fn = ENEMY_PORTRAITS[monsterName];
-  return fn ? fn() : goblinScoutPortrait();
+/** Every monster in the game (dozens of named species across 20 gates)
+ *  draws from just 6 hand-drawn silhouettes, keyed by its gate rank's
+ *  archetype and tinted with that rank's rim-glow color - variety comes
+ *  from name/stats (see TYPE_VARIANTS in data.ts), not a unique art asset
+ *  per species. */
+export function enemyPortrait(archetype: Archetype, rank: Rank): string {
+  const fn = ARCHETYPE_PORTRAITS[archetype];
+  return fn ? fn(RANK_GLOW[rank]) : goblinScoutPortrait(RANK_GLOW.E);
 }
 
 /** Small gate-list thumbnail: an arched portal glowing with the gate's rank color. */
@@ -183,10 +183,11 @@ export function gatePortrait(rank: Rank): string {
   return frame(uid, glow, silhouette, extras);
 }
 
-/** A "shadow" reuses its source monster's silhouette but desaturated,
- *  monochrome-violet, with a stronger glow — reads as "arisen"/ghostly. */
-export function shadowPortrait(sourceMonster: string): string {
-  const base = enemyPortrait(sourceMonster);
+/** A "shadow" reuses its source monster's silhouette (its rank's
+ *  archetype) but desaturated, monochrome-violet, with a stronger glow —
+ *  reads as "arisen"/ghostly. */
+export function shadowPortrait(rank: Rank): string {
+  const base = enemyPortrait(ARCHETYPE_BY_RANK[rank], rank);
   const uid = `shadow-wrap-${uidSeq++}`;
   return `<svg class="portrait-svg" viewBox="0 0 100 100" role="img" aria-hidden="true">
     <defs>

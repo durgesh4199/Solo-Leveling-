@@ -1,5 +1,11 @@
 export type Rank = "E" | "D" | "C" | "B" | "A" | "S";
 
+/** One of six hand-drawn silhouette families a monster's portrait is built
+ *  from - each gate rank has a signature archetype (see ARCHETYPE_BY_RANK
+ *  in data.ts), so silhouette + rim-glow color tells you a monster's rank
+ *  at a glance even across dozens of differently-named species. */
+export type Archetype = "goblin" | "orc" | "wraith" | "knight" | "beast" | "wyrm";
+
 export type Screen = "title" | "gates" | "battle" | "stats" | "shadows" | "inventory";
 
 export type StatKey = "str" | "agi" | "int" | "vit" | "per";
@@ -27,7 +33,10 @@ export interface GateDef {
   id: string;
   rank: Rank;
   name: string;
-  monsterName: string;
+  /** Exactly 5 trash species names fought within this gate - a random one
+   *  is assigned to each spawned trash unit (see makeEnemies in store.ts),
+   *  all rendered with this gate rank's archetype silhouette. */
+  enemyTypes: string[];
   bossName: string;
   recommendedLevel: number;
   baseHp: number;
@@ -124,12 +133,13 @@ export interface FloatText {
   kind: FloatKind;
 }
 
-/** One enemy within the current wave's group. Non-boss waves share a name
- *  (battle.enemyName) and portrait (battle.monsterKey) - only their rolled
- *  stats and elite status differ - so per-unit state only needs to track
- *  combat state. */
+/** One enemy within the current wave's group. Each trash unit is rolled its
+ *  own species name (one of the gate's 5 enemyTypes, each with its own
+ *  stat-weight flavor - see TYPE_VARIANTS in data.ts); the whole wave still
+ *  shares one portrait silhouette (battle.rank's archetype). */
 export interface EnemyUnit {
   uid: string;
+  name: string;
   hp: number;
   maxHp: number;
   atk: number;
@@ -160,8 +170,7 @@ export type BattleResult = "wave-clear" | "gate-clear" | "defeat" | null;
 export interface BattleState {
   gateId: string;
   gateName: string;
-  monsterKey: string; // base monster type for this gate - used to pick portrait art
-  enemyName: string;  // display name for the current wave (boss wave gets bossName)
+  rank: Rank; // gate's rank - drives the archetype/portrait + rim-glow for every unit this run
   isBossWave: boolean;
   waveIndex: number; // 1-based
   totalWaves: number;

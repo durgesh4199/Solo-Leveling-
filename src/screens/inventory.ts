@@ -2,7 +2,7 @@ import type { Game } from "../store";
 import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { hunterPortrait } from "../art/portraits";
-import { POTIONS, RARITY_META, affixText, priceForItem } from "../data";
+import { POTIONS, RARITY_META, affixText, priceForItem, sellPriceForItem } from "../data";
 import type { ItemRarity, ItemSlot, LootItem } from "../types";
 
 const SLOT_LABEL: Record<ItemSlot, string> = {
@@ -54,6 +54,9 @@ export const inventoryScreen: ScreenModule = (root, game) => {
   let slotFilter: ItemSlot | "all" = "all";
   let rarityFilter: ItemRarity | "all" = "all";
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
+  // Item id currently showing its "Confirm sell?" state - selling is
+  // one-way (see game.sellItem), so a stray tap can't lose gear.
+  let sellConfirmId: string | null = null;
 
   const subTabBtn = (tab: SubTab, label: string, iconName: string) => `
     <button class="btn ${subTab === tab ? "btn-primary" : "btn-secondary"} action-btn" data-subtab="${tab}"
@@ -104,19 +107,27 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       ? `<div style="font-size:12px;color:var(--color-neutral-600);padding:var(--space-3) 0;">Nothing matches that filter.</div>`
       : filteredBag.map((item) => {
         const meta = RARITY_META[item.rarity];
-        const sellPrice = Math.max(1, Math.round(priceForItem(item) / 5));
+        const sellPrice = sellPriceForItem(item);
+        const confirming = sellConfirmId === item.id;
+        const actions = confirming
+          ? `
+            <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:5px 8px;font-size:10px;" data-action="cancel-sell" title="Cancel">Cancel</button>
+            <button class="btn btn-primary action-btn" style="flex-shrink:0;padding:5px 8px;font-size:10px;" data-action="confirm-sell" data-item="${item.id}" title="Confirm sell">${icon("coin")} Sell ${sellPrice}g</button>`
+          : `
+            <button class="btn btn-icon" style="width:28px;height:28px;flex-shrink:0;color:var(--color-accent-300);" data-action="equip-item" data-item="${item.id}" title="Equip">${icon("check-circle")}</button>
+            <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:5px 8px;font-size:10px;" data-action="sell-item" data-item="${item.id}" title="Sell">${icon("coin")} ${sellPrice}g</button>`;
         return `
-          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);">
+          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid ${confirming ? "var(--color-accent-600)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);">
             <span style="font-size:18px;color:${meta.color};flex-shrink:0;">${icon(item.icon as any)}</span>
             <div style="flex:1;min-width:0;">
               <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>
               <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap;">
-                ${rarityTag(item)}
-                <span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[item.slot]} · ${affixSummary(item)}</span>
+                ${confirming
+                  ? `<span style="font-size:11px;color:var(--color-accent-300);">Sell for ${sellPrice}g? This can't be undone.</span>`
+                  : `${rarityTag(item)}<span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[item.slot]} · ${affixSummary(item)}</span>`}
               </div>
             </div>
-            <button class="btn btn-icon" style="width:28px;height:28px;flex-shrink:0;color:var(--color-accent-300);" data-action="equip-item" data-item="${item.id}" title="Equip">${icon("check-circle")}</button>
-            <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:5px 8px;font-size:10px;" data-action="sell-item" data-item="${item.id}" title="Sell">${icon("coin")} ${sellPrice}g</button>
+            ${actions}
           </div>`;
       }).join("");
 
@@ -238,7 +249,13 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       el.addEventListener("click", () => game.equipItem(el.dataset.item!));
     });
     root.querySelectorAll<HTMLElement>('[data-action="sell-item"]').forEach((el) => {
-      el.addEventListener("click", () => game.sellItem(el.dataset.item!));
+      el.addEventListener("click", () => { sellConfirmId = el.dataset.item!; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="confirm-sell"]').forEach((el) => {
+      el.addEventListener("click", () => { game.sellItem(el.dataset.item!); sellConfirmId = null; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="cancel-sell"]').forEach((el) => {
+      el.addEventListener("click", () => { sellConfirmId = null; draw(); });
     });
     root.querySelectorAll<HTMLElement>('[data-action="unequip-item"]').forEach((el) => {
       el.addEventListener("click", () => game.unequipItem(el.dataset.slot as ItemSlot));

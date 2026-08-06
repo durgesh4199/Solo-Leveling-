@@ -16,10 +16,18 @@ engine, no external art/font dependencies — built to run on:
 
 ## Gameplay
 
-- **Gates** — 6 hand-placed gates, E through S rank: *Crumbling Ruins*
-  (Goblin Scout) → *Sunken Crypt* (Orc Brute) → *Frost Hollow* (Ice Wraith)
-  → *Red Cathedral* (Blood Knight) → *Void Spire* (Shadow Beast) →
-  *Dragon's Maw* (Ancient Wyrm)
+- **Gates** — 20 gates across all 6 ranks (4×E, 4×D, 4×C, 3×B, 3×A, 2×S),
+  each fielding **5 distinct trash species** of its own (rolled at random
+  per spawn) plus a named boss - not just a bigger version of the same
+  enemy. Every rank has its own signature monster family (goblins on E,
+  orcs on D, wraiths on C, knights on B, beasts on A, wyrms on S), so the
+  silhouette + rim-glow color always tells you a threat's rank at a
+  glance; each of the 5 species within a gate also rolls its own
+  stat-weight flavor (glass-cannon, tanky, balanced, ...) so the variety
+  is felt in combat, not just read off a name label. The original 6
+  hand-placed gates (*Crumbling Ruins* → *Sunken Crypt* → *Frost Hollow* →
+  *Red Cathedral* → *Void Spire* → *Dragon's Maw*) are unchanged; 14 more
+  fill out every rank with real alternatives to grind
 - **Multi-enemy gates** — each gate is a 10-20 enemy gauntlet (rank-scaled:
   10 on E, up to 20 on S), fought in waves of up to **3 simultaneous
   enemies**, ramping in strength across the whole run ("easy to hard"),
@@ -62,7 +70,9 @@ engine, no external art/font dependencies — built to run on:
   Status screen row you spent it on
 - **Shadow Army** — **every** wave clear (trash or boss) offers **Arise** on
   a short interstitial before continuing, adding that wave's monster as a
-  permanent Shadow ranked to your current Hunter rank - not just the boss
+  permanent Shadow ranked to your current Hunter rank - not just the boss.
+  The Shadow Army screen filters by rank and by species so a large roster
+  stays easy to manage
 - **Power** — one combined "how strong am I" number, shown on the Title
   screen and prominently on Status: level, every effective stat (gear
   folds in automatically), effective max HP/MP, crit chance, and the
@@ -91,7 +101,8 @@ engine, no external art/font dependencies — built to run on:
   early - both reset the same countdown, shown live on the tab), and
   **Potions** (the tiered HP/MP consumables, used mid-battle from the
   Items panel next to Skills). The bag has no free discard - selling
-  (1/5 of an item's Shop price) is the only way an unwanted piece leaves it
+  (a tenth of an item's Shop price) is the only way an unwanted piece
+  leaves it, and asks for a tap-to-confirm first so nothing sells by accident
 - **Status** — hovering a stat's `+` previews exactly what that point would
   buy ("+5 Max HP", "+0.3% Crit · -1% Guard Miss", ...) before you commit
   to it, then floats the same confirmation off the row once you do

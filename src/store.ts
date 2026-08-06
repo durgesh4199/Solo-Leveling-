@@ -1,4 +1,4 @@
-import { GATES_DATA, POTIONS, STAT_TUNING, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
+import { ARCHETYPE_BY_RANK, GATES_DATA, POTIONS, STAT_TUNING, SHADOW_RANK_POWER, SKILLS, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
 import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 
 /** Events the shader/particle FX layer cares about, separate from the
@@ -186,10 +186,10 @@ export class Game {
 
   // ---- wave/enemy construction ----
 
-  private freshUnit(hp: number, atk: number, def: number, xp: number, gold: number, isElite: boolean): EnemyUnit {
+  private freshUnit(name: string, hp: number, atk: number, def: number, xp: number, gold: number, isElite: boolean): EnemyUnit {
     this.unitSeq += 1;
     return {
-      uid: `u${this.unitSeq}`, hp, maxHp: hp, atk, def, xp, gold, isElite,
+      uid: `u${this.unitSeq}`, name, hp, maxHp: hp, atk, def, xp, gold, isElite,
       alive: true, hit: false, vfx: null, lunging: false,
       floatText: null, floatId: 0, glow: false, guardRounds: 0
     };
@@ -201,18 +201,26 @@ export class Game {
       const hp = Math.round(s.hp * modifier.enemyHpMult);
       const atk = Math.round(s.atk * modifier.enemyAtkMult);
       const gold = Math.round(s.xp * 0.9);
-      return [this.freshUnit(hp, atk, s.def, s.xp, gold, false)];
+      return [this.freshUnit(gate.bossName, hp, atk, s.def, s.xp, gold, false)];
     }
     const units: EnemyUnit[] = [];
     for (let i = 0; i < entry.count; i++) {
       const s = statsForUnit(gate, entry.unitStart + i, trashCount);
+      // Each trash unit rolls one of the gate's 5 species at random - its
+      // pool position also picks a stat-weight variant (glass-cannon,
+      // tanky, ...) so "5 different types" is felt in combat, not just read
+      // off a name label.
+      const typeIdx = Math.floor(Math.random() * gate.enemyTypes.length);
+      const name = gate.enemyTypes[typeIdx];
+      const variant = TYPE_VARIANTS[typeIdx % TYPE_VARIANTS.length];
       const isElite = Math.random() < 0.12;
       const eliteMult = isElite ? 1.6 : 1;
-      const hp = Math.round(s.hp * eliteMult * modifier.enemyHpMult);
-      const atk = Math.round(s.atk * eliteMult * modifier.enemyAtkMult);
+      const hp = Math.round(s.hp * variant.hpMult * eliteMult * modifier.enemyHpMult);
+      const atk = Math.round(s.atk * variant.atkMult * eliteMult * modifier.enemyAtkMult);
+      const def = Math.round(s.def * variant.defMult);
       const xp = Math.round(s.xp * (isElite ? 1.8 : 1));
       const gold = Math.round(xp * 0.6);
-      units.push(this.freshUnit(hp, atk, s.def, xp, gold, isElite));
+      units.push(this.freshUnit(name, hp, atk, def, xp, gold, isElite));
     }
     return units;
   }
@@ -226,8 +234,7 @@ export class Game {
     this.state.player.mp = this.effectiveMaxMp();
     this.state.screen = "battle";
     this.state.battle = {
-      gateId: gate.id, gateName: gate.name, monsterKey: gate.monsterName,
-      enemyName: entry.isBoss ? gate.bossName : gate.monsterName,
+      gateId: gate.id, gateName: gate.name, rank: gate.rank,
       isBossWave: entry.isBoss,
       waveIndex: 1, totalWaves: plan.length,
       enemies: this.makeEnemies(gate, entry, trashCount, modifier),
@@ -253,7 +260,6 @@ export class Game {
       ...battle,
       waveIndex: battle.waveIndex + 1,
       isBossWave: entry.isBoss,
-      enemyName: entry.isBoss ? gate.bossName : gate.monsterName,
       enemies: this.makeEnemies(gate, entry, trashCount, modifier),
       over: false, result: null, locked: false, guardRounds: 0,
       playerHit: false, skillPanelOpen: false, itemPanelOpen: false,
@@ -523,7 +529,7 @@ export class Game {
       if (action === "guard") {
         attacker.guardRounds = 1;
         this.emitFx({ kind: "guard", side: "enemy", targetUid: attacker.uid });
-        this.showBattleToast(next, { text: `${next.enemyName} braces for impact`, kind: "info" });
+        this.showBattleToast(next, { text: `${attacker.name} braces for impact`, kind: "info" });
         this.state.battle = next;
         this.notify();
         setTimeout(() => step(i + 1), 480);
@@ -542,7 +548,7 @@ export class Game {
       next.lunge = null;
       this.emitFx({ kind: isSpecial ? "smash" : "slash", side: "player" });
       this.emitFx({ kind: "shake", intensity: isSpecial ? "heavy" : "light" });
-      if (isSpecial) this.showBattleToast(next, { text: `${next.enemyName} unleashes a fierce strike!`, kind: "info" });
+      if (isSpecial) this.showBattleToast(next, { text: `${attacker.name} unleashes a fierce strike!`, kind: "info" });
 
       const player = { ...this.state.player };
       player.hp = Math.max(0, player.hp - dmg);
@@ -720,11 +726,12 @@ export class Game {
     const battle = this.state.battle;
     if (!battle || (battle.result !== "wave-clear" && battle.result !== "gate-clear")) return;
     const rank = rankForLevel(this.state.player.level);
+    const sourceName = battle.enemies[0]?.name ?? "Unknown";
     const shadow = {
       id: `${battle.gateId}-w${battle.waveIndex}-${Date.now()}`,
-      name: `Shadow of the ${battle.enemyName}`,
+      name: `Shadow of the ${sourceName}`,
       rank,
-      type: battle.monsterKey,
+      type: sourceName,
       power: SHADOW_RANK_POWER[rank],
       deployed: false
     };
@@ -812,11 +819,12 @@ export class Game {
   }
 
   /** The bag has no free "discard" - the only way an item leaves it (short
-   *  of equipping it) is selling for a fifth of its Shop price. */
+   *  of equipping it) is selling for a tenth of its Shop price (see
+   *  SELL_PRICE_RATIO in data.ts). */
   sellItem(itemId: string) {
     const item = this.state.bag.find((i) => i.id === itemId);
     if (!item) return;
-    const price = Math.max(1, Math.round(priceForItem(item) / 5));
+    const price = sellPriceForItem(item);
     this.state.player = { ...this.state.player, gold: this.state.player.gold + price };
     this.state.bag = this.state.bag.filter((i) => i.id !== itemId);
     this.notify();

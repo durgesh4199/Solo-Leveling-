@@ -1,15 +1,94 @@
-import type { AffixKey, GateDef, GateModifier, ItemAffix, ItemRarity, ItemSlot, LootItem, PotionDef, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
+import type { AffixKey, Archetype, GateDef, GateModifier, ItemAffix, ItemRarity, ItemSlot, LootItem, PotionDef, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
 
-/** Ported from the Hunter Protocol design file; extended with a boss name
- *  per gate for the multi-wave encounter system (see buildWavePlan /
- *  statsForUnit below). */
+/** Every gate rank's signature monster family - fixes which of the 6
+ *  hand-drawn silhouettes (see art/portraits.ts) a rank's enemies use, so
+ *  "what does an S-rank threat look like" stays a consistent visual
+ *  language even across the many differently-named species within it. */
+export const ARCHETYPE_BY_RANK: Record<Rank, Archetype> = {
+  E: "goblin", D: "orc", C: "wraith", B: "knight", A: "beast", S: "wyrm"
+};
+
+/** Six named subspecies per archetype (trash) plus four boss epithets -
+ *  index 0 of each is the original "hand-placed" gate's monster/boss name,
+ *  kept verbatim; every other gate on that archetype draws a rotated slice
+ *  of the same pool so no two gates field an identical roster. */
+const TRASH_POOL: Record<Archetype, string[]> = {
+  goblin: ["Goblin Scout", "Goblin Raider", "Goblin Skulker", "Goblin Shaman", "Goblin Marauder", "Goblin Trapper"],
+  orc: ["Orc Brute", "Orc Grunt", "Orc Berserker", "Orc Reaver", "Orc Butcher", "Orc Skirmisher"],
+  wraith: ["Ice Wraith", "Frost Specter", "Pale Wraith", "Hollow Wisp", "Wailing Wraith", "Rime Phantom"],
+  knight: ["Blood Knight", "Fallen Knight", "Cursed Templar", "Iron Sentinel", "Wraithguard", "Crimson Vanguard"],
+  beast: ["Shadow Beast", "Dire Fang", "Night Stalker", "Bloodfang Prowler", "Feral Warden", "Void Hound"],
+  wyrm: ["Ancient Wyrm", "Storm Wyrm", "Serpent Drake", "Wyrmling Broodguard", "Ashwing Drake", "Voidscale Wyrm"]
+};
+const BOSS_POOL: Record<Archetype, string[]> = {
+  goblin: ["Goblin Overlord", "Goblin Warlord", "Goblin Chieftain", "Goblin Despot"],
+  orc: ["Orc Warchief", "Orc Warlord", "Orc Bloodfist", "Orc Ravager"],
+  wraith: ["Ice Wraith Sovereign", "Frost Sovereign", "Wraith Empress", "Hollow Monarch"],
+  knight: ["Blood Knight Commander", "Fallen Grandmaster", "Crimson Warlord", "Iron Sovereign"],
+  beast: ["Shadow Beast Alpha", "Dire Fang Matriarch", "Void Hound Alpha", "Night Stalker Prime"],
+  wyrm: ["Ancient Wyrm, Elder", "Storm Wyrm Sovereign", "Voidscale Dominion", "Ashwing Dominion"]
+};
+
+/** Picks a gate's 5-species trash roster + boss name from its rank's
+ *  archetype pools, rotated by `kInRank` (this gate's position among its
+ *  own rank) so e.g. all four E-rank gates still feel distinct from each
+ *  other despite sharing the goblin archetype. */
+function rosterFor(archetype: Archetype, kInRank: number): { enemyTypes: string[]; bossName: string } {
+  const trash = TRASH_POOL[archetype];
+  const enemyTypes = Array.from({ length: 5 }, (_, j) => trash[(kInRank + j) % trash.length]);
+  const bossPool = BOSS_POOL[archetype];
+  return { enemyTypes, bossName: bossPool[kInRank % bossPool.length] };
+}
+
+function gate(id: string, rank: Rank, name: string, kInRank: number, recommendedLevel: number, baseHp: number, baseAtk: number, baseDef: number, xp: number): GateDef {
+  const { enemyTypes, bossName } = rosterFor(ARCHETYPE_BY_RANK[rank], kInRank);
+  return { id, rank, name, enemyTypes, bossName, recommendedLevel, baseHp, baseAtk, baseDef, xp };
+}
+
+/** 20 gates, E through S - the original 6 "hand-placed" gates (kInRank 0 on
+ *  each rank) are unchanged from the source design; the rest fill out each
+ *  rank with 2-3 more gates at gently ramping power, so every rank offers a
+ *  real choice of where to grind instead of one mandatory stop. */
 export const GATES_DATA: GateDef[] = [
-  { id: "g1", rank: "E", name: "Crumbling Ruins", monsterName: "Goblin Scout", bossName: "Goblin Overlord", recommendedLevel: 1, baseHp: 55, baseAtk: 7, baseDef: 0, xp: 25 },
-  { id: "g2", rank: "D", name: "Sunken Crypt", monsterName: "Orc Brute", bossName: "Orc Warchief", recommendedLevel: 4, baseHp: 95, baseAtk: 11, baseDef: 2, xp: 45 },
-  { id: "g3", rank: "C", name: "Frost Hollow", monsterName: "Ice Wraith", bossName: "Ice Wraith Sovereign", recommendedLevel: 8, baseHp: 140, baseAtk: 15, baseDef: 4, xp: 70 },
-  { id: "g4", rank: "B", name: "Red Cathedral", monsterName: "Blood Knight", bossName: "Blood Knight Commander", recommendedLevel: 13, baseHp: 195, baseAtk: 20, baseDef: 7, xp: 100 },
-  { id: "g5", rank: "A", name: "Void Spire", monsterName: "Shadow Beast", bossName: "Shadow Beast Alpha", recommendedLevel: 19, baseHp: 260, baseAtk: 26, baseDef: 10, xp: 145 },
-  { id: "g6", rank: "S", name: "Dragon's Maw", monsterName: "Ancient Wyrm", bossName: "Ancient Wyrm, Elder", recommendedLevel: 26, baseHp: 340, baseAtk: 34, baseDef: 14, xp: 200 }
+  gate("g1", "E", "Crumbling Ruins", 0, 1, 55, 7, 0, 25),
+  gate("g2", "E", "Wailing Marsh", 1, 2, 62, 8, 0, 29),
+  gate("g3", "E", "Bone Thicket", 2, 3, 68, 8, 1, 32),
+  gate("g4", "E", "Rustwater Sewers", 3, 3, 72, 9, 1, 35),
+
+  gate("g5", "D", "Sunken Crypt", 0, 4, 95, 11, 2, 45),
+  gate("g6", "D", "Howling Quarry", 1, 5, 105, 12, 2, 52),
+  gate("g7", "D", "Ashen Barrow", 2, 6, 115, 13, 3, 58),
+  gate("g8", "D", "Thorned Hollow", 3, 7, 125, 14, 3, 64),
+
+  gate("g9", "C", "Frost Hollow", 0, 8, 140, 15, 4, 70),
+  gate("g10", "C", "Glacier Fang", 1, 9, 150, 16, 4, 77),
+  gate("g11", "C", "Mirrored Depths", 2, 10, 160, 17, 5, 83),
+  gate("g12", "C", "Obsidian Reach", 3, 11, 170, 18, 5, 89),
+
+  gate("g13", "B", "Red Cathedral", 0, 13, 195, 20, 7, 100),
+  gate("g14", "B", "Crimson Bastion", 1, 15, 212, 22, 8, 112),
+  gate("g15", "B", "Widow's Chapel", 2, 17, 228, 24, 9, 124),
+
+  gate("g16", "A", "Void Spire", 0, 19, 260, 26, 10, 145),
+  gate("g17", "A", "Abyssal Rift", 1, 21, 280, 28, 11, 160),
+  gate("g18", "A", "Nightmare Bastion", 2, 23, 300, 30, 12, 175),
+
+  gate("g19", "S", "Dragon's Maw", 0, 26, 340, 34, 14, 200),
+  gate("g20", "S", "Worldless Throne", 1, 29, 375, 37, 16, 225)
+];
+
+/** A trash unit's species (one of its gate's 5 enemyTypes, picked at
+ *  random per spawn - see makeEnemies in store.ts) also picks which of
+ *  these stat-weight profiles it rolls, by pool position: index 0 is a
+ *  plain baseline (the original design's numbers, untouched), the rest
+ *  trade HP for ATK or vice versa so "5 different types" is a real combat
+ *  difference, not just a different name on the same numbers. */
+export const TYPE_VARIANTS: { hpMult: number; atkMult: number; defMult: number }[] = [
+  { hpMult: 1.0, atkMult: 1.0, defMult: 1.0 },
+  { hpMult: 0.85, atkMult: 1.25, defMult: 0.9 },
+  { hpMult: 1.25, atkMult: 0.8, defMult: 1.15 },
+  { hpMult: 0.95, atkMult: 1.05, defMult: 1.05 },
+  { hpMult: 1.1, atkMult: 1.15, defMult: 0.85 }
 ];
 
 /** Total enemies (trash + the final boss) a gate throws at you in one run.
@@ -247,6 +326,16 @@ export function priceForItem(item: LootItem): number {
     return sum + a.value;
   }, 0);
   return Math.max(15, Math.round(power * 9));
+}
+
+/** The bag's only way to shed an unwanted item - selling for a tenth of
+ *  what it would cost to buy back from the Shop. Centralized so the store
+ *  (which actually pays it out) and the Inventory screen (which previews
+ *  it on every bag row) can never drift out of sync with each other. */
+export const SELL_PRICE_RATIO = 0.1;
+
+export function sellPriceForItem(item: LootItem): number {
+  return Math.max(1, Math.round(priceForItem(item) * SELL_PRICE_RATIO));
 }
 
 /** Rolls a fresh batch of purchasable gear at the given rank - the Shop's

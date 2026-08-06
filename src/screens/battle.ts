@@ -3,7 +3,7 @@ import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { enemyPortrait, hunterPortrait, shadowPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
-import { POTIONS, RARITY_META, SKILLS } from "../data";
+import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS } from "../data";
 import type { EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
@@ -35,6 +35,7 @@ function enemySlotHtml(unit: EnemyUnit, art: string, isBoss: boolean, small: boo
         <div class="float-num" style="display:none;"></div>
         <div class="guard-badge" style="display:none;" title="Blocking">${icon("shield")}</div>
       </div>
+      <div class="mini-enemy-name" style="font-size:10px;color:var(--color-neutral-400);max-width:${small ? 72 : 110}px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${unit.name}</div>
       <div class="mini-hp-track bar-track" style="width:${small ? 68 : 100}px;height:5px;"><div class="mini-hp-fill bar-fill" style="background:var(--color-neutral-400);"></div></div>
       <div class="mini-hp-text" style="font-size:10px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;"></div>
     </div>
@@ -344,7 +345,7 @@ export const battleScreen: ScreenModule = (root, game) => {
       shadowCompanionEl.style.display = "flex";
       if (renderedShadowId !== deployedShadow.id) {
         renderedShadowId = deployedShadow.id;
-        shadowCompanionArt.innerHTML = shadowPortrait(deployedShadow.type);
+        shadowCompanionArt.innerHTML = shadowPortrait(deployedShadow.rank);
       }
       shadowCompanionName.textContent = deployedShadow.name;
     } else {
@@ -353,11 +354,13 @@ export const battleScreen: ScreenModule = (root, game) => {
     }
 
     waveProgressEl.textContent = b.isBossWave ? "FINAL WAVE" : `WAVE ${b.waveIndex} / ${b.totalWaves}`;
-    const aliveCount = b.enemies.filter((u) => u.alive).length;
-    enemyNameEl.textContent = aliveCount > 1 ? `${b.enemyName} ×${aliveCount}` : b.enemyName;
+    const currentTarget = b.enemies.find((u) => u.alive);
+    // Trash waves can field up to 3 differently-named units at once now, so
+    // the header follows whichever one is actually the current target
+    // (each portrait also carries its own name label below it).
+    enemyNameEl.textContent = currentTarget?.name ?? b.enemies[0]?.name ?? "";
     bossTag.style.display = b.isBossWave ? "inline-flex" : "none";
 
-    const currentTarget = b.enemies.find((u) => u.alive);
     if (currentTarget && !b.over) {
       const critPct = Math.round(game.critChance * 100);
       combatDetailsEl.style.visibility = "visible";
@@ -373,8 +376,12 @@ export const battleScreen: ScreenModule = (root, game) => {
     if (waveKey !== renderedWaveKey) {
       renderedWaveKey = waveKey;
       const small = b.enemies.length > 1;
+      const archetype = ARCHETYPE_BY_RANK[b.rank];
+      // A fresh enemyPortrait() call per unit (not one shared string) - each
+      // generates its own unique gradient-id suffix so simultaneous enemy
+      // portraits never collide on <defs> ids within the same DOM.
       enemyGroup.innerHTML = b.enemies
-        .map((u) => enemySlotHtml(u, enemyPortrait(b.monsterKey), b.isBossWave, small))
+        .map((u) => enemySlotHtml(u, enemyPortrait(archetype, b.rank), b.isBossWave, small))
         .join("");
     }
 
