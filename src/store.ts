@@ -1,5 +1,5 @@
 import { GATES_DATA, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, rankForLevel, rollGateModifier, rollRarity, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
-import type { BattleState, BattleToast, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
+import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -8,7 +8,7 @@ import type { BattleState, BattleToast, EnemyUnit, FloatKind, GameState, GateDef
 export type FxEvent =
   | { kind: "slash"; side: "player" | "enemy"; targetUid?: string }
   | { kind: "flurry"; side: "player" | "enemy"; targetUid?: string }
-  | { kind: "guard" }
+  | { kind: "guard"; side: "player" | "enemy"; targetUid?: string }
   | { kind: "shake"; intensity: "light" | "heavy" }
   | { kind: "dissolve"; side: "enemy"; targetUid?: string }
   | { kind: "portal" }
@@ -114,7 +114,7 @@ export class Game {
     return {
       uid: `u${this.unitSeq}`, hp, maxHp: hp, atk, def, xp, gold, isElite,
       alive: true, hit: false, vfx: null, lunging: false,
-      floatText: null, floatId: 0, glow: false
+      floatText: null, floatId: 0, glow: false, guardRounds: 0
     };
   }
 
@@ -155,7 +155,7 @@ export class Game {
       waveIndex: 1, totalWaves: plan.length,
       enemies: this.makeEnemies(gate, entry, trashCount, modifier),
       modifier,
-      over: false, result: null, guarding: false, locked: false,
+      over: false, result: null, guardRounds: 0, locked: false,
       playerHit: false, skillPanelOpen: false
     };
     this.notify();
@@ -178,10 +178,10 @@ export class Game {
       isBossWave: entry.isBoss,
       enemyName: entry.isBoss ? gate.bossName : gate.monsterName,
       enemies: this.makeEnemies(gate, entry, trashCount, modifier),
-      over: false, result: null, locked: false, guarding: false,
+      over: false, result: null, locked: false, guardRounds: 0,
       playerHit: false, skillPanelOpen: false,
       vfxPlayer: null, guardRing: false, lunge: null, flash: false,
-      floatPlayer: null, playerGlow: false
+      floatPlayer: null, playerGlow: false, shadowLunge: false
     };
     this.notify();
   }
@@ -206,7 +206,7 @@ export class Game {
     battle.flash = !!opts.flash;
 
     if (opts.player) this.emitFx({ kind: opts.player, side: "player" });
-    if (opts.guard) this.emitFx({ kind: "guard" });
+    if (opts.guard) this.emitFx({ kind: "guard", side: "player" });
     if (opts.flash) this.emitFx({ kind: "shake", intensity: opts.heavy ? "heavy" : "light" });
 
     setTimeout(() => {
@@ -348,8 +348,13 @@ export class Game {
   }
 
   /** Applies damage to one enemy unit; grants its XP/gold/loot and fires
-   *  the dissolve fx if it dies. */
+   *  the dissolve fx if it dies. A unit currently guarding (AI-chosen)
+   *  halves the hit and spends one round of its guard on it. */
   private applyDamage(battle: BattleState, unit: EnemyUnit, dmg: number, isCrit = false) {
+    if (unit.guardRounds > 0) {
+      dmg = Math.max(1, Math.round(dmg * 0.5));
+      unit.guardRounds -= 1;
+    }
     unit.hp = Math.max(0, unit.hp - dmg);
     unit.hit = true;
     this.triggerUnitFloat(unit, `-${dmg}`, isCrit ? "crit" : "dmg");
@@ -363,7 +368,8 @@ export class Game {
   }
 
   /** A deployed Shadow auto-assists every player action, striking whatever
-   *  is currently targeted right after the player's own hit lands. */
+   *  is currently targeted right after the player's own hit lands - with
+   *  its own lunge animation so it visibly joins the fight too. */
   private companionStrike(battle: BattleState) {
     const shadow = this.state.shadowArmy.find((s) => s.deployed);
     if (!shadow) return;
@@ -373,6 +379,17 @@ export class Game {
     this.setUnitVfx(target, "slash");
     this.applyDamage(battle, target, dmg);
     this.clearHitFlagLater(target.uid);
+
+    battle.shadowLunge = true;
+    this.vfxSeq += 1;
+    const id = this.vfxSeq;
+    battle.shadowVfxId = id;
+    setTimeout(() => {
+      if (this.state.battle && this.state.battle.shadowVfxId === id) {
+        this.state.battle = { ...this.state.battle, shadowLunge: false };
+        this.notify();
+      }
+    }, 380);
   }
 
   private onWaveCleared(battle: BattleState) {
@@ -385,15 +402,31 @@ export class Game {
     this.notify();
   }
 
+  /** Chooses what an attacking enemy does this round. Not pure chance:
+   *  a badly hurt unit is more likely to turtle up, and any unit is more
+   *  likely to bust out its special the instant the player is guarding -
+   *  it's the difference between "smarter" and "random". */
+  private decideEnemyAction(unit: EnemyUnit, battle: BattleState, playerGuarding: boolean): EnemyAction {
+    const threatening = unit.isElite || battle.isBossWave;
+    const lowHp = unit.hp < unit.maxHp * 0.3;
+    const guardChance = 0.12 + (lowHp ? 0.15 : 0);
+    const specialChance = (threatening ? 0.28 : 0.16) + (playerGuarding ? 0.15 : 0);
+    const roll = Math.random();
+    if (roll < guardChance) return "guard";
+    if (roll < guardChance + specialChance) return "special";
+    return "attack";
+  }
+
   private enemyTurn(startBattle: BattleState) {
-    const wasGuardingRound = startBattle.guarding;
+    const wasGuardingRound = startBattle.guardRounds > 0;
     const attackers = startBattle.enemies.filter((u) => u.alive).map((u) => u.uid);
 
     const step = (i: number) => {
       const battle = this.state.battle;
       if (!battle || battle.over) return;
       if (i >= attackers.length) {
-        this.state.battle = { ...battle, guarding: false, locked: false };
+        const guardRounds = Math.max(0, battle.guardRounds - (wasGuardingRound ? 1 : 0));
+        this.state.battle = { ...battle, guardRounds, locked: false };
         this.notify();
         return;
       }
@@ -405,14 +438,28 @@ export class Game {
 
       const next = this.cloneBattle(battle);
       const attacker = next.enemies.find((u) => u.uid === found.uid)!;
-      let dmg = Math.max(1, Math.round(attacker.atk + (Math.random() * 6 - 3)));
-      if (wasGuardingRound) dmg = Math.round(dmg * 0.4);
+      const action = this.decideEnemyAction(attacker, next, wasGuardingRound);
+
+      if (action === "guard") {
+        attacker.guardRounds = 1;
+        this.emitFx({ kind: "guard", side: "enemy", targetUid: attacker.uid });
+        this.showBattleToast(next, { text: `${next.enemyName} braces for impact`, kind: "info" });
+        this.state.battle = next;
+        this.notify();
+        setTimeout(() => step(i + 1), 480);
+        return;
+      }
+
+      const isSpecial = action === "special";
+      let dmg = Math.max(1, Math.round(attacker.atk * (isSpecial ? 1.7 : 1) + (Math.random() * 6 - 3)));
+      if (wasGuardingRound) dmg = Math.round(dmg * (isSpecial ? 0.75 : 0.4));
 
       attacker.lunging = true;
-      next.vfxPlayer = "slash";
+      next.vfxPlayer = isSpecial ? "flurry" : "slash";
       next.lunge = null;
-      this.emitFx({ kind: "slash", side: "player" });
-      this.emitFx({ kind: "shake", intensity: "light" });
+      this.emitFx({ kind: isSpecial ? "flurry" : "slash", side: "player" });
+      this.emitFx({ kind: "shake", intensity: isSpecial ? "heavy" : "light" });
+      if (isSpecial) this.showBattleToast(next, { text: `${next.enemyName} unleashes a fierce strike!`, kind: "info" });
 
       const player = { ...this.state.player };
       player.hp = Math.max(0, player.hp - dmg);
@@ -528,7 +575,7 @@ export class Game {
     if (!src || src.over || src.locked) return;
     const battle = this.cloneBattle(src);
     battle.locked = true;
-    battle.guarding = true;
+    battle.guardRounds = 1 + Math.floor(Math.random() * 3); // 1-3 rounds, re-rolled each use
     battle.skillPanelOpen = false;
     this.playPlayerVfx(battle, { guard: true });
     this.state.battle = battle;

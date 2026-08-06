@@ -28,10 +28,18 @@ engine, no external art/font dependencies — built to run on:
   stats). HP/MP carry over between waves within a run — no free heals,
   potions are the only relief
 - **Battle** — turn-based, auto-targeting the frontmost living enemy
-  (underlined): **Attack**, **Skills** (see below), **Guard** (halves
-  incoming damage), **Potion** (+35 HP). All alive enemies in a wave attack
-  each round, so a full group is real pressure. Feedback is purely visual
-  (floating numbers, hit-flash, slash/flurry effects) - no text log
+  (underlined): **Attack**, **Skills** (see below), **Guard** (blocks for a
+  random 1-3 rounds, halving incoming damage each round it's up), **Potion**
+  (+35 HP). Enemies sit above, the player (and a deployed Shadow) below, so
+  attacks read as motion up/down between them rather than side-to-side.
+  All alive enemies in a wave attack each round, so a full group is real
+  pressure - and they're not just dumb damage dealers: each one rolls
+  between a normal attack, **blocking** (reduces the next hit it takes),
+  and a **special strike** (~1.7x damage, telegraphed with a toast and a
+  heavier shake) - low-HP enemies turtle up more, and all of them lean into
+  specials the instant *you're* the one guarding. Feedback is purely visual
+  (floating numbers, hit-flash, slash/flurry effects, block/special toasts)
+  - no text log
 - **Skills** — unlock progressively with level, opened via a picker panel
   (locked ones show their unlock level): **Dagger Rush** (Lv 1, heavy
   single hit), **Piercing Thrust** (Lv 5, hits the front 2 enemies),

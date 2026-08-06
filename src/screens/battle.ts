@@ -29,6 +29,7 @@ function enemySlotHtml(unit: EnemyUnit, art: string, isBoss: boolean, small: boo
           <div class="flurry-flare" style="display:none;"></div>
         </div>
         <div class="float-num" style="display:none;"></div>
+        <div class="guard-badge" style="display:none;" title="Blocking">${icon("shield")}</div>
       </div>
       <div class="mini-hp-track bar-track" style="width:${small ? 68 : 100}px;height:5px;"><div class="mini-hp-fill bar-fill" style="background:var(--color-neutral-400);"></div></div>
       <div class="mini-hp-text" style="font-size:10px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;"></div>
@@ -80,6 +81,7 @@ export const battleScreen: ScreenModule = (root, game) => {
               </div>
               <div id="player-guard-ring" class="guard-ring" style="display:none;"></div>
               <div id="player-float" class="float-num" style="display:none;"></div>
+              <div id="player-guard-badge" style="display:none;" title="Guarding - incoming hits reduced">${icon("shield")}<span id="player-guard-count"></span></div>
             </div>
 
             <div id="shadow-companion" style="display:none;flex-direction:column;align-items:center;gap:4px;">
@@ -168,6 +170,9 @@ export const battleScreen: ScreenModule = (root, game) => {
   const playerVfx = $("#player-vfx");
   const playerGuardRing = $("#player-guard-ring");
   const playerFloat = $("#player-float");
+  const playerGuardBadge = $("#player-guard-badge");
+  const playerGuardCount = $("#player-guard-count");
+  const shadowCompanionPortrait = $("#shadow-companion-portrait");
   const arenaFlash = $("#arena-flash");
   const arenaRow = $(".arena-row");
   const enemyGroup = $("#enemy-group");
@@ -222,8 +227,16 @@ export const battleScreen: ScreenModule = (root, game) => {
         break;
       }
       case "guard": {
-        const c = center(fxCanvas, playerPortrait);
-        shaderFx.guardRing(c.x, c.y, VIOLET_SOFT);
+        if (e.side === "player") {
+          const c = center(fxCanvas, playerPortrait);
+          shaderFx.guardRing(c.x, c.y, VIOLET_SOFT);
+        } else if (e.targetUid) {
+          const slot = findEnemySlot(e.targetUid);
+          if (slot) {
+            const c = center(fxCanvas, slot);
+            shaderFx.guardRing(c.x, c.y, VIOLET_SOFT);
+          }
+        }
         break;
       }
       case "shake": {
@@ -334,6 +347,7 @@ export const battleScreen: ScreenModule = (root, game) => {
       const floatEl = slot.querySelector<HTMLElement>(".float-num")!;
       const hpFill = slot.querySelector<HTMLElement>(".mini-hp-fill")!;
       const hpText = slot.querySelector<HTMLElement>(".mini-hp-text")!;
+      const guardBadgeEl = slot.querySelector<HTMLElement>(".guard-badge")!;
 
       slot.style.opacity = unit.alive ? "1" : "0.18";
       slot.style.filter = unit.alive ? "none" : "grayscale(1)";
@@ -344,7 +358,8 @@ export const battleScreen: ScreenModule = (root, game) => {
       vfxEl.style.display = unit.vfx ? "block" : "none";
       vfxEl.className = `vfx-layer ${unit.vfx ?? ""}`;
       flareEl.style.display = unit.vfx === "flurry" ? "block" : "none";
-      portraitEl.classList.toggle("lunge-left", unit.lunging);
+      portraitEl.classList.toggle("lunge-down", unit.lunging);
+      guardBadgeEl.style.display = unit.guardRounds > 0 ? "flex" : "none";
 
       if (unit.floatText) {
         floatEl.textContent = unit.floatText.text;
@@ -386,8 +401,16 @@ export const battleScreen: ScreenModule = (root, game) => {
     playerVfx.style.display = b.vfxPlayer ? "block" : "none";
     playerVfx.className = `vfx-layer ${b.vfxPlayer ?? ""}`;
     playerGuardRing.style.display = b.guardRing ? "block" : "none";
-    playerPortrait.classList.toggle("lunge-right", b.lunge === "player");
+    playerPortrait.classList.toggle("lunge-up", b.lunge === "player");
+    shadowCompanionPortrait.classList.toggle("lunge-up", !!b.shadowLunge);
     arenaFlash.style.display = b.flash ? "block" : "none";
+
+    if (b.guardRounds > 0) {
+      playerGuardBadge.style.display = "flex";
+      playerGuardCount.textContent = String(b.guardRounds);
+    } else {
+      playerGuardBadge.style.display = "none";
+    }
 
     if (b.floatPlayer) {
       playerFloat.textContent = b.floatPlayer.text;

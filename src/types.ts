@@ -93,6 +93,7 @@ export interface SkillDef {
 export type VfxKind = "slash" | "flurry" | null;
 export type LungeSide = "player" | null;
 export type FloatKind = "dmg" | "heal" | "crit";
+export type EnemyAction = "attack" | "guard" | "special";
 
 export interface FloatText {
   text: string;
@@ -119,6 +120,9 @@ export interface EnemyUnit {
   floatText: FloatText | null;
   floatId: number;
   glow: boolean;
+  /** Rounds left where a hit against this unit is reduced - set when the
+   *  enemy AI chooses to block instead of attacking. */
+  guardRounds: number;
 }
 
 export interface BattleToast {
@@ -142,7 +146,9 @@ export interface BattleState {
 
   over: boolean;
   result: BattleResult;
-  guarding: boolean;
+  /** Rounds of incoming-damage reduction left on the player, rolled 1-3
+   *  each time Guard is used. 0 = not guarding. */
+  guardRounds: number;
   locked: boolean;
   playerHit: boolean;
   skillPanelOpen: boolean;
@@ -156,6 +162,11 @@ export interface BattleState {
   floatPlayer?: FloatText | null;
   floatPlayerId?: number;
   playerGlow?: boolean;
+
+  /** The deployed Shadow's own attack animation, separate from the
+   *  player's so both can visibly strike in the same beat. */
+  shadowLunge?: boolean;
+  shadowVfxId?: number;
 
   toast?: BattleToast | null;
   toastId?: number;
