@@ -73,12 +73,18 @@ engine, no external art/font dependencies — built to run on:
   epic → legendary → mythic → godly), each both rarer and a bigger
   multiplier on every affix it rolls than the last
 - **Inventory** — three sub-tabs, each its own menu: **Gear** (a paperdoll
-  equipment grid - Amulet/Helmet/Ring across the top, Weapon beside the
-  Hunter, Body Armor and Legs stacked below, connected by pathway lines,
-  plus the loot bag with slot/rarity filter chips), **Shop** (spend gold on
-  procedurally-rolled equipable gear, reroll the stock for a fee), and
+  equipment grid - Amulet/Helmet across the top with Weapon and Ring
+  flanking the Hunter, Body Armor and Legs stacked below, connected by
+  pathway lines, plus the loot bag with compact slot/rarity filter
+  dropdowns), **Shop** (spend gold on procedurally-rolled equipable gear;
+  restocks itself for free every 10 real minutes, or pay to reroll
+  early - both reset the same countdown, shown live on the tab), and
   **Potions** (the tiered HP/MP consumables, used mid-battle from the
-  Items panel next to Skills)
+  Items panel next to Skills). The bag has no free discard - selling
+  (1/5 of an item's Shop price) is the only way an unwanted piece leaves it
+- **Status** — hovering a stat's `+` previews exactly what that point would
+  buy ("+5 Max HP", "+0.3% Crit · -1% Guard Miss", ...) before you commit
+  to it, then floats the same confirmation off the row once you do
 - Progress autosaves are **not yet wired up** (see Roadmap) — this MVP
   plays a full session in memory; add `src/systems/save.ts`-style
   persistence when you're ready to ship
