@@ -1,9 +1,9 @@
-import { ARCHETYPE_BY_RANK, GATES_DATA, POTIONS, STAT_TUNING, SHADOW_RANK_POWER, SKILLS, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
+import { ARCHETYPE_BY_RANK, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
 import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 import { evaluateCondition } from "./systems/progress/conditions";
 import type { ProgressContext } from "./systems/progress/types";
 import { COUNTER_KEYS } from "./systems/progress/types";
-import { TITLES } from "./systems/titles/data";
+import { TITLE_REGISTRY } from "./systems/titles/data";
 import type { TitleDef } from "./systems/titles/types";
 import { ACHIEVEMENTS } from "./systems/achievements/data";
 import { clearSave, loadSave, writeSave } from "./systems/save";
@@ -330,7 +330,7 @@ export class Game {
   private equippedTitle(): TitleDef | null {
     const id = this.state.progress.equippedTitleId;
     if (!id) return null;
-    return TITLES.find((t) => t.id === id) ?? null;
+    return TITLE_REGISTRY.get(id) ?? null;
   }
 
   /** Equip one Title at a time (null clears it) - only an already-unlocked
@@ -370,7 +370,7 @@ export class Game {
 
     const unlockedTitles = new Set(this.state.progress.unlockedTitleIds);
     let titlesChanged = false;
-    for (const t of TITLES) {
+    for (const t of TITLE_REGISTRY.all()) {
       if (!unlockedTitles.has(t.id) && evaluateCondition(t.condition, ctx)) {
         unlockedTitles.add(t.id);
         titlesChanged = true;
@@ -472,7 +472,7 @@ export class Game {
   private advanceWave() {
     const battle = this.state.battle;
     if (!battle) return;
-    const gate = GATES_DATA.find((g) => g.id === battle.gateId);
+    const gate = GATE_REGISTRY.get(battle.gateId);
     if (!gate) return;
     const plan = buildWavePlan(gate);
     const trashCount = totalEnemiesForGate(gate) - 1;
@@ -654,7 +654,7 @@ export class Game {
     const chance = Math.min(1, baseChance + lootBonus);
     if (Math.random() >= chance) return;
 
-    const gate = GATES_DATA.find((g) => g.id === battle.gateId);
+    const gate = GATE_REGISTRY.get(battle.gateId);
     const rank = gate?.rank ?? "E";
     const rarityBonus = (unit.isElite ? 0.15 : 0) + (battle.isBossWave ? 0.3 : 0) + rankRarityBonus(rank);
     const rarity = rollRarity(rarityBonus);
@@ -863,7 +863,7 @@ export class Game {
   useSkill(skillKey: string) {
     const src = this.state.battle;
     if (!src || src.over || src.locked) return;
-    const skillDef = SKILLS.find((s) => s.key === skillKey);
+    const skillDef = SKILL_REGISTRY.get(skillKey);
     if (!skillDef) return;
     if (this.state.player.level < skillDef.unlockLevel) return;
     if (this.state.player.mp < skillDef.mpCost) return;
@@ -938,7 +938,7 @@ export class Game {
     if (!src || src.over || src.locked) return;
     const count = this.state.inventory.potions[potionId] ?? 0;
     if (count <= 0) return;
-    const def = POTIONS.find((p) => p.id === potionId);
+    const def = POTION_REGISTRY.get(potionId);
     if (!def) return;
 
     const battle = this.cloneBattle(src);
@@ -1103,7 +1103,7 @@ export class Game {
   }
 
   buyPotion(potionId: string) {
-    const def = POTIONS.find((p) => p.id === potionId);
+    const def = POTION_REGISTRY.get(potionId);
     if (!def || this.state.player.gold < def.cost) return;
     this.state.player = { ...this.state.player, gold: this.state.player.gold - def.cost };
     const potions = { ...this.state.inventory.potions, [potionId]: (this.state.inventory.potions[potionId] ?? 0) + 1 };
@@ -1112,6 +1112,13 @@ export class Game {
   }
 
   get gates(): GateDef[] {
-    return GATES_DATA;
+    return GATE_REGISTRY.all() as GateDef[];
+  }
+
+  /** O(1) gate-by-id lookup for the UI (e.g. the Gates screen resolving a
+   *  clicked row's id back to its GateDef) - the same registry startBattle
+   *  and grantKillRewards already use internally. */
+  getGate(id: string): GateDef | undefined {
+    return GATE_REGISTRY.get(id);
   }
 }

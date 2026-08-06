@@ -1,5 +1,6 @@
 import type { TitleDef } from "./types";
 import { COUNTER_KEYS } from "../progress/types";
+import { createRegistry, type Registry } from "../../services/registry";
 
 /** Starter roster - the condition/bonus architecture supports growing this
  *  to hundreds of entries (per EXPANSION_ROADMAP.md Phase 1) without any
@@ -82,3 +83,6 @@ export const TITLES: TitleDef[] = [
     bonus: { kind: "allStatsPct", value: 0.05 }, bonusText: "+5% All Stats"
   }
 ];
+
+/** O(1) title-by-id lookup, replacing the `.find()` in Game.equippedTitle(). */
+export const TITLE_REGISTRY: Registry<TitleDef> = createRegistry(TITLES, (t) => t.id, "Title");

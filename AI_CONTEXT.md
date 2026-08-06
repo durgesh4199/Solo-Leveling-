@@ -65,6 +65,7 @@ src/
     save/                       SavedGameState/SaveFile types + loadSave/writeSave/clearSave
   services/
     storage.ts               The only file that touches `localStorage` directly
+    registry.ts               Generic createRegistry<T>() - O(1) id lookup + load-time duplicate-id check for static content tables
   styles/
     tokens.css               Design tokens (colors, spacing, radii) - "Nocturne" dark-violet theme
     base.css                   Buttons, cards, tags, bars, tabs, form controls
@@ -301,6 +302,13 @@ Arise, level-up, dissolve).
   Any new battle-screen state needs a targeted DOM patch, or it'll cut off
   whatever CSS animation is mid-flight.
 - **No text combat log, ever.** All feedback is animation/color/float-text.
+- **Any static content table addressed by id gets a `Registry` (see
+  `services/registry.ts`), and every `.find()` on that table gets
+  converted to use it** - don't add a new `TABLE.find((x) => x.id ===
+  id)` call site once a table has a registry; that reintroduces exactly
+  the "silent duplicate id" risk the registry exists to prevent. A table
+  that's only ever iterated in full (no id lookup anywhere) doesn't need
+  one - don't add a registry with no real consumer.
 - **New systems get their own `src/systems/<name>/` folder** (types.ts +
   data.ts + logic), not more code stuffed into store.ts/data.ts — see the
   architecture note at the top of `EXPANSION_ROADMAP.md` for why the

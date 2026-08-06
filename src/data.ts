@@ -1,4 +1,5 @@
 import type { AffixKey, Archetype, GateDef, GateModifier, ItemAffix, ItemRarity, ItemSlot, LootItem, PotionDef, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
+import { createRegistry, type Registry } from "./services/registry";
 
 /** Every gate rank's signature monster family - fixes which of the 6
  *  hand-drawn silhouettes (see art/portraits.ts) a rank's enemies use, so
@@ -76,6 +77,12 @@ export const GATES_DATA: GateDef[] = [
   gate("g19", "S", "Dragon's Maw", 0, 26, 340, 34, 14, 200),
   gate("g20", "S", "Worldless Throne", 1, 29, 375, 37, 16, 225)
 ];
+
+/** O(1) gate-by-id lookup - store.ts previously re-scanned GATES_DATA with
+ *  `.find()` at every call site that needed "the gate this battle belongs
+ *  to"; this also throws at load time if a gate id is ever duplicated,
+ *  which a plain array + `.find()` would instead let through silently. */
+export const GATE_REGISTRY: Registry<GateDef> = createRegistry(GATES_DATA, (g) => g.id, "Gate");
 
 /** A trash unit's species (one of its gate's 5 enemyTypes, picked at
  *  random per spawn - see makeEnemies in store.ts) also picks which of
@@ -418,6 +425,10 @@ export function unlockedSkills(level: number): SkillDef[] {
   return SKILLS.filter((s) => s.unlockLevel <= level);
 }
 
+/** O(1) skill-by-key lookup, replacing the `.find()` in useSkill()/the
+ *  battle skill-panel wiring. */
+export const SKILL_REGISTRY: Registry<SkillDef> = createRegistry(SKILLS, (s) => s.key, "Skill");
+
 /** Three tiers apiece of HP/MP consumables - a cheap early option and a
  *  real late-game one, bought in the Inventory shop and used mid-battle
  *  from the Items panel. */
@@ -429,3 +440,6 @@ export const POTIONS: PotionDef[] = [
   { id: "mp_greater", name: "Greater MP Potion", kind: "mp", tier: "greater", amount: 35, cost: 55, icon: "moon-stars" },
   { id: "mp_supreme", name: "Supreme MP Potion", kind: "mp", tier: "supreme", amount: 70, cost: 110, icon: "moon-stars" }
 ];
+
+/** O(1) potion-by-id lookup, replacing the `.find()` in useItem()/buyPotion(). */
+export const POTION_REGISTRY: Registry<PotionDef> = createRegistry(POTIONS, (p) => p.id, "Potion");

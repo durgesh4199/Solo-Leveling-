@@ -72,7 +72,24 @@ touching anything below.
    Hunter (with a save preview + confirmed wipe). Persists player, gates,
    shadows, inventory, bag, shop, progress. Never resumes mid-battle by
    design.
-2. **Data-driven architecture improvements** — ⏳ next up, not started.
+2. **Data-driven architecture improvements** — ✅ **Done.** A generic
+   `Registry<T>` (`src/services/registry.ts`): O(1) `.get(id)` in place of
+   a `.find()` scan, plus a load-time check that throws immediately if two
+   entries in a content table ever share an id (previously that mistake
+   would only ever surface as "the wrong one turned up" at the point of
+   use). Wired up for the 4 tables that had real lookup call sites -
+   `GATE_REGISTRY`/`SKILL_REGISTRY`/`POTION_REGISTRY` (in `data.ts`) and
+   `TITLE_REGISTRY` (in `systems/titles/data.ts`) - replacing every
+   `.find()` on those tables across `store.ts`, `battle.ts`, and
+   `gates.ts`. `Game` gained a public `getGate(id)` for the UI, matching
+   the pattern the store already used internally. Deliberately did *not*
+   add an `ACHIEVEMENT_REGISTRY` - nothing needs achievement-by-id lookup
+   yet (achievements are only ever iterated in full), and a registry with
+   no real consumer would be exactly the kind of speculative code the
+   "no placeholders" rule rules out; add one the day a real call site
+   needs it. This is also the pattern every later phase's own content
+   table (Talents, Classes, Crafting recipes, Equipment Sets, ...) should
+   use for its own id lookups.
 3. **Inventory improvements** — pending.
 4. **Equipment affix system** — pending. *(Note: a first version of
    affixes already exists - `ItemAffix`/`rollAffixValue` in `data.ts`,

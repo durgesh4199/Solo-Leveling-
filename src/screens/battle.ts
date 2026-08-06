@@ -3,7 +3,7 @@ import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { AURA_TIER, PLAYER_RANK_GLOW, enemyPortrait, hunterPortrait, playerAuraHtml, shadowPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
-import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS, rankForLevel } from "../data";
+import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS, SKILL_REGISTRY, rankForLevel } from "../data";
 import type { EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
@@ -453,7 +453,7 @@ export const battleScreen: ScreenModule = (root, game) => {
     skillPanel.style.display = b.skillPanelOpen ? "block" : "none";
     root.querySelectorAll<HTMLElement>(".skill-row").forEach((row) => {
       const key = row.dataset.skill;
-      const def = SKILLS.find((s) => s.key === key);
+      const def = key ? SKILL_REGISTRY.get(key) : undefined;
       if (!def) return;
       const locked = p.level < def.unlockLevel;
       const noMp = p.mp < def.mpCost;

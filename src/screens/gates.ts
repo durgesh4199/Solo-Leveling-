@@ -39,7 +39,7 @@ export const gatesScreen = simpleScreen((game: Game) => {
 }, (root, game) => {
   root.querySelectorAll<HTMLElement>('[data-action="enter-gate"]').forEach((el) => {
     el.addEventListener("click", () => {
-      const gate = game.gates.find((g) => g.id === el.dataset.gateId);
+      const gate = el.dataset.gateId ? game.getGate(el.dataset.gateId) : undefined;
       if (gate) game.startBattle(gate);
     });
   });
