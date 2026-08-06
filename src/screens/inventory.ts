@@ -2,7 +2,7 @@ import type { Game } from "../store";
 import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { hunterPortrait } from "../art/portraits";
-import { POTIONS, RARITY_META, affixText, priceForItem, rankForLevel, sellPriceForItem } from "../data";
+import { POTIONS, RARITY_META, affixDeltaText, affixText, compareItemAffixes, priceForItem, rankForLevel, sellPriceForItem } from "../data";
 import type { ItemRarity, ItemSlot, LootItem } from "../types";
 
 const SLOT_LABEL: Record<ItemSlot, string> = {
@@ -28,6 +28,10 @@ const PAPERDOLL_POS: Record<ItemSlot, string> = {
 const SLOT_ORDER: ItemSlot[] = ["weapon", "helmet", "chest", "legs", "ring", "amulet"];
 const RARITY_ORDER: ItemRarity[] = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "godly"];
 type SubTab = "gear" | "shop" | "potions";
+type SortBy = "default" | "rarity" | "value" | "newest";
+const SORT_LABEL: Record<SortBy, string> = {
+  default: "Sort: Default", rarity: "Sort: Rarity", value: "Sort: Value", newest: "Sort: Newest"
+};
 
 function rarityTag(item: LootItem): string {
   const meta = RARITY_META[item.rarity];
@@ -36,6 +40,31 @@ function rarityTag(item: LootItem): string {
 
 function affixSummary(item: LootItem): string {
   return item.affixes.map(affixText).join(" · ");
+}
+
+function sortItems(items: LootItem[], sortBy: SortBy): LootItem[] {
+  const sorted = [...items];
+  if (sortBy === "rarity") sorted.sort((a, b) => RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity));
+  else if (sortBy === "value") sorted.sort((a, b) => priceForItem(b) - priceForItem(a));
+  else if (sortBy === "newest") sorted.reverse(); // items are always appended, so array order is oldest-first already
+  return sorted;
+}
+
+/** A tap-to-expand comparison against whatever's currently equipped in the
+ *  item's slot (or "nothing" - a pure gain preview) - the same block is
+ *  used from both the bag and the Shop, since "should I equip/buy this"
+ *  is the same question either place. */
+function comparisonHtml(item: LootItem, equipped: LootItem | undefined, slotLabel: string): string {
+  const deltas = compareItemAffixes(item, equipped ?? null).filter((d) => d.delta !== 0);
+  const header = equipped ? `Vs. equipped ${equipped.name}` : `${slotLabel} slot is empty — pure gain`;
+  const lines = deltas.length === 0
+    ? `<div style="font-size:11px;color:var(--color-neutral-500);">No stat difference from what's equipped.</div>`
+    : deltas.map((d) => `<div style="font-size:11px;font-weight:500;color:${d.delta > 0 ? "var(--color-accent-300)" : "#ff6b5b"};">${affixDeltaText(d)}</div>`).join("");
+  return `
+    <div style="margin-top:6px;padding-top:6px;border-top:1px dashed var(--color-neutral-800);display:flex;flex-direction:column;gap:2px;">
+      <div style="font-size:10px;color:var(--color-neutral-600);text-transform:uppercase;letter-spacing:0.04em;">${header}</div>
+      ${lines}
+    </div>`;
 }
 
 function formatCountdown(ms: number): string {
@@ -53,10 +82,15 @@ export const inventoryScreen: ScreenModule = (root, game) => {
   let subTab: SubTab = "gear";
   let slotFilter: ItemSlot | "all" = "all";
   let rarityFilter: ItemRarity | "all" = "all";
+  let sortBy: SortBy = "default";
   let countdownTimer: ReturnType<typeof setInterval> | null = null;
   // Item id currently showing its "Confirm sell?" state - selling is
   // one-way (see game.sellItem), so a stray tap can't lose gear.
   let sellConfirmId: string | null = null;
+  // Item id (bag or Shop - ids never collide) currently showing its
+  // tap-to-compare panel. Shared across both since only one sub-tab is
+  // ever visible at a time.
+  let comparingId: string | null = null;
 
   const subTabBtn = (tab: SubTab, label: string, iconName: string) => `
     <button class="btn ${subTab === tab ? "btn-primary" : "btn-secondary"} action-btn" data-subtab="${tab}"
@@ -81,10 +115,10 @@ export const inventoryScreen: ScreenModule = (root, game) => {
           </div>`;
     }).join("");
 
-    const filteredBag = game.state.bag.filter((item) =>
+    const filteredBag = sortItems(game.state.bag.filter((item) =>
       (slotFilter === "all" || item.slot === slotFilter) &&
       (rarityFilter === "all" || item.rarity === rarityFilter)
-    );
+    ), sortBy);
 
     const selectOption = (value: string, label: string, selected: boolean) =>
       `<option value="${value}" ${selected ? "selected" : ""}>${label}</option>`;
@@ -109,6 +143,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
         const meta = RARITY_META[item.rarity];
         const sellPrice = sellPriceForItem(item);
         const confirming = sellConfirmId === item.id;
+        const comparing = comparingId === item.id;
         const actions = confirming
           ? `
             <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:5px 8px;font-size:10px;" data-action="cancel-sell" title="Cancel">Cancel</button>
@@ -117,15 +152,16 @@ export const inventoryScreen: ScreenModule = (root, game) => {
             <button class="btn btn-icon" style="width:28px;height:28px;flex-shrink:0;color:var(--color-accent-300);" data-action="equip-item" data-item="${item.id}" title="Equip">${icon("check-circle")}</button>
             <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:5px 8px;font-size:10px;" data-action="sell-item" data-item="${item.id}" title="Sell">${icon("coin")} ${sellPrice}g</button>`;
         return `
-          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid ${confirming ? "var(--color-accent-600)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);">
+          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid ${confirming ? "var(--color-accent-600)" : comparing ? "var(--color-accent-700)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);">
             <span style="font-size:18px;color:${meta.color};flex-shrink:0;">${icon(item.icon as any)}</span>
-            <div style="flex:1;min-width:0;">
+            <div style="flex:1;min-width:0;cursor:pointer;" data-action="toggle-compare" data-item="${item.id}" title="Tap to compare against equipped">
               <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>
               <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap;">
                 ${confirming
                   ? `<span style="font-size:11px;color:var(--color-accent-300);">Sell for ${sellPrice}g? This can't be undone.</span>`
                   : `${rarityTag(item)}<span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[item.slot]} · ${affixSummary(item)}</span>`}
               </div>
+              ${!confirming && comparing ? comparisonHtml(item, p.equipment[item.slot], SLOT_LABEL[item.slot]) : ""}
             </div>
             ${actions}
           </div>`;
@@ -142,7 +178,13 @@ export const inventoryScreen: ScreenModule = (root, game) => {
         </div>
       </div>
       <div>
-        <h5 style="margin-bottom:var(--space-2);color:var(--color-neutral-400);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Bag (${game.state.bag.length})</h5>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2);">
+          <h5 style="margin:0;color:var(--color-neutral-400);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Bag (${game.state.bag.length})</h5>
+          ${game.state.bag.length === 0 ? "" : `
+            <select class="select-filter" data-filter="sort" style="font-size:11px;">
+              ${(Object.keys(SORT_LABEL) as SortBy[]).map((s) => selectOption(s, SORT_LABEL[s], sortBy === s)).join("")}
+            </select>`}
+        </div>
         ${bagFilters}
         <div style="display:flex;flex-direction:column;gap:var(--space-2);">${bagRows}</div>
       </div>
@@ -157,15 +199,17 @@ export const inventoryScreen: ScreenModule = (root, game) => {
         const meta = RARITY_META[item.rarity];
         const price = priceForItem(item);
         const canBuy = p.gold >= price;
+        const comparing = comparingId === item.id;
         return `
-          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);">
+          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid ${comparing ? "var(--color-accent-700)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);">
             <span style="font-size:18px;color:${meta.color};flex-shrink:0;">${icon(item.icon as any)}</span>
-            <div style="flex:1;min-width:0;">
+            <div style="flex:1;min-width:0;cursor:pointer;" data-action="toggle-compare" data-item="${item.id}" title="Tap to compare against equipped">
               <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>
               <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap;">
                 ${rarityTag(item)}
                 <span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[item.slot]} · ${affixSummary(item)}</span>
               </div>
+              ${comparing ? comparisonHtml(item, p.equipment[item.slot], SLOT_LABEL[item.slot]) : ""}
             </div>
             <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:6px 10px;font-size:11px;" data-action="buy-shop-item" data-item="${item.id}" ${canBuy ? "" : "disabled"}>
               ${icon("coin")} ${price}g
@@ -246,16 +290,23 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       el.addEventListener("click", () => { subTab = el.dataset.subtab as SubTab; draw(); });
     });
     root.querySelectorAll<HTMLElement>('[data-action="equip-item"]').forEach((el) => {
-      el.addEventListener("click", () => game.equipItem(el.dataset.item!));
+      el.addEventListener("click", () => { comparingId = null; game.equipItem(el.dataset.item!); });
     });
     root.querySelectorAll<HTMLElement>('[data-action="sell-item"]').forEach((el) => {
       el.addEventListener("click", () => { sellConfirmId = el.dataset.item!; draw(); });
     });
     root.querySelectorAll<HTMLElement>('[data-action="confirm-sell"]').forEach((el) => {
-      el.addEventListener("click", () => { game.sellItem(el.dataset.item!); sellConfirmId = null; draw(); });
+      el.addEventListener("click", () => { game.sellItem(el.dataset.item!); sellConfirmId = null; comparingId = null; draw(); });
     });
     root.querySelectorAll<HTMLElement>('[data-action="cancel-sell"]').forEach((el) => {
       el.addEventListener("click", () => { sellConfirmId = null; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="toggle-compare"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        const id = el.dataset.item!;
+        comparingId = comparingId === id ? null : id;
+        draw();
+      });
     });
     root.querySelectorAll<HTMLElement>('[data-action="unequip-item"]').forEach((el) => {
       el.addEventListener("click", () => game.unequipItem(el.dataset.slot as ItemSlot));
@@ -264,7 +315,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       el.addEventListener("click", () => game.buyPotion(el.dataset.potion!));
     });
     root.querySelectorAll<HTMLElement>('[data-action="buy-shop-item"]').forEach((el) => {
-      el.addEventListener("click", () => game.buyShopItem(el.dataset.item!));
+      el.addEventListener("click", () => { comparingId = null; game.buyShopItem(el.dataset.item!); });
     });
     root.querySelector<HTMLElement>('[data-action="reroll-shop"]')?.addEventListener("click", () => game.rerollShop());
     root.querySelectorAll<HTMLSelectElement>("[data-filter]").forEach((el) => {
@@ -273,6 +324,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
         const value = el.value;
         if (kind === "slot") slotFilter = value as ItemSlot | "all";
         else if (kind === "rarity") rarityFilter = value as ItemRarity | "all";
+        else if (kind === "sort") sortBy = value as SortBy;
         draw();
       });
     });

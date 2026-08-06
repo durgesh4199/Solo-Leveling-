@@ -96,13 +96,17 @@ engine, no external art/font dependencies — built to run on:
   equipment grid - Amulet/Helmet across the top with Weapon and Ring
   flanking the Hunter, Body Armor and Legs stacked below, connected by
   pathway lines, plus the loot bag with compact slot/rarity filter
-  dropdowns), **Shop** (spend gold on procedurally-rolled equipable gear;
-  restocks itself for free every 10 real minutes, or pay to reroll
-  early - both reset the same countdown, shown live on the tab), and
-  **Potions** (the tiered HP/MP consumables, used mid-battle from the
-  Items panel next to Skills). The bag has no free discard - selling
-  (a tenth of an item's Shop price) is the only way an unwanted piece
-  leaves it, and asks for a tap-to-confirm first so nothing sells by accident
+  dropdowns and a Default/Rarity/Value/Newest sort), **Shop** (spend gold
+  on procedurally-rolled equipable gear; restocks itself for free every 10
+  real minutes, or pay to reroll early - both reset the same countdown,
+  shown live on the tab), and **Potions** (the tiered HP/MP consumables,
+  used mid-battle from the Items panel next to Skills). The bag has no
+  free discard - selling (a tenth of an item's Shop price) is the only way
+  an unwanted piece leaves it, and asks for a tap-to-confirm first so
+  nothing sells by accident. Tapping any item in the bag or Shop (not the
+  buttons) expands a **comparison** against whatever's equipped in that
+  slot - exactly which stats go up, which go down, right there before you
+  commit to equipping or buying
 - **Status** — three sub-tabs. **Status** (unchanged): hovering a stat's
   `+` previews exactly what that point would buy ("+5 Max HP", "+0.3% Crit
   · -1% Guard Miss", ...) before you commit to it, then floats the same

@@ -164,14 +164,20 @@ One deploy slot; deploying a new Shadow auto-recalls the previous one.
 - **Gear** — paperdoll equipment grid (6 slots: weapon/helmet/chest/legs/
   ring/amulet) around the Hunter portrait, connector lines as real grid
   children (not %-based pseudo-elements, to survive uneven row heights),
-  plus the loot bag below with slot/rarity `<select>` filters. Selling an
-  item asks for a tap-to-confirm (row flips to "Sell for Xg? / Confirm /
-  Cancel") before paying out **10%** of its Shop price
-  (`SELL_PRICE_RATIO`/`sellPriceForItem` in data.ts) — no free discard.
+  plus the loot bag below with slot/rarity `<select>` filters and a
+  Default/Rarity/Value/Newest sort. Selling an item asks for a
+  tap-to-confirm (row flips to "Sell for Xg? / Confirm / Cancel") before
+  paying out **10%** of its Shop price (`SELL_PRICE_RATIO`/
+  `sellPriceForItem` in data.ts) — no free discard. Tapping any bag row's
+  name/affix block (not the action buttons) expands a comparison against
+  whatever's equipped in that slot - `compareItemAffixes`/`affixDeltaText`
+  in data.ts, the union of every affix key on either side (so a stat only
+  the equipped item has still shows as a loss, not silently dropped).
 - **Shop** — procedurally-rolled gear at the player's current rank, 6
-  items. Restocks itself free every 10 real minutes
-  (`SHOP_AUTO_RESTOCK_MS`), or pay `rerollCost` to reroll early — both
-  reset the same countdown, shown live via a 1s UI-only tick.
+  items, with the same tap-to-compare as the bag. Restocks itself free
+  every 10 real minutes (`SHOP_AUTO_RESTOCK_MS`), or pay `rerollCost` to
+  reroll early — both reset the same countdown, shown live via a 1s
+  UI-only tick.
 - **Potions** — 6 tiers (Minor/Greater/Supreme × HP/MP), bought here, used
   from the battle Items panel.
 

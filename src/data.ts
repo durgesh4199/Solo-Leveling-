@@ -320,6 +320,57 @@ export function affixText(a: ItemAffix): string {
   return `+${a.value} ${a.key.toUpperCase()}`;
 }
 
+/** One stat's net change if a candidate item replaced whatever's currently
+ *  in its slot. */
+export interface AffixDelta {
+  key: AffixKey;
+  candidateValue: number;
+  equippedValue: number;
+  delta: number;
+}
+
+const AFFIX_KEY_ORDER: AffixKey[] = ["str", "agi", "int", "vit", "per", "hp", "mp", "crit"];
+
+/** Sums an item's affixes by key (an item can roll the same key more than
+ *  once in principle, though the current generator never does) - null/
+ *  undefined (an empty slot) sums to nothing, i.e. every key reads 0. */
+function affixValueMap(item: LootItem | null | undefined): Partial<Record<AffixKey, number>> {
+  const map: Partial<Record<AffixKey, number>> = {};
+  if (!item) return map;
+  for (const a of item.affixes) map[a.key] = (map[a.key] ?? 0) + a.value;
+  return map;
+}
+
+/** What changes, stat by stat, if `candidate` replaced `equipped` in its
+ *  slot - the union of every key present on *either* side, not just a
+ *  pairing of the candidate's own affixes, so an equipped item's affixes
+ *  that the candidate doesn't share still show up as a loss (negative
+ *  delta), not just silently dropped from the comparison. `equipped` null
+ *  (nothing in that slot yet) makes every delta equal the candidate's own
+ *  affix values - a pure "what would I gain" list. Stable key order
+ *  (`AFFIX_KEY_ORDER`) so the UI never re-shuffles between renders. */
+export function compareItemAffixes(candidate: LootItem, equipped: LootItem | null): AffixDelta[] {
+  const candMap = affixValueMap(candidate);
+  const equipMap = affixValueMap(equipped);
+  const keys = AFFIX_KEY_ORDER.filter((k) => candMap[k] !== undefined || equipMap[k] !== undefined);
+  return keys.map((key) => {
+    const candidateValue = candMap[key] ?? 0;
+    const equippedValue = equipMap[key] ?? 0;
+    return { key, candidateValue, equippedValue, delta: candidateValue - equippedValue };
+  });
+}
+
+/** Renders one AffixDelta as "+3 STR" / "-22 Max HP" / "+2% Crit" - the
+ *  sign is explicit only on the positive side since a negative number
+ *  already prints its own "-". */
+export function affixDeltaText(d: AffixDelta): string {
+  const sign = d.delta > 0 ? "+" : "";
+  if (d.key === "hp") return `${sign}${d.delta} Max HP`;
+  if (d.key === "mp") return `${sign}${d.delta} Max MP`;
+  if (d.key === "crit") return `${sign}${d.delta}% Crit`;
+  return `${sign}${d.delta} ${d.key.toUpperCase()}`;
+}
+
 /** Gold price for a shop-listed item - each affix is normalized back to a
  *  comparable "power" unit (undoing the different per-key scaling
  *  rollAffixValue applies) before pricing, so a piece with two HP/MP

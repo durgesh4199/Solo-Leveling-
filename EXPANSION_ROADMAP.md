@@ -90,7 +90,18 @@ touching anything below.
    needs it. This is also the pattern every later phase's own content
    table (Talents, Classes, Crafting recipes, Equipment Sets, ...) should
    use for its own id lookups.
-3. **Inventory improvements** — pending.
+3. **Inventory improvements** — ✅ **Done.** Item comparison: tapping a
+   bag or Shop item's name/affix block expands a panel showing the exact
+   stat delta against whatever's currently equipped in that slot (or a
+   pure-gain preview if the slot is empty) - `compareItemAffixes`/
+   `affixDeltaText` in `data.ts`, the union of every affix key on *either*
+   side so a stat only the equipped item has still shows as a loss, not
+   silently dropped. Bag sort (Default/Rarity/Value/Newest) alongside the
+   existing slot/rarity filters, default preserves the original array
+   order exactly (no behavior change unless the player opts in). Both
+   verified via Node scripts against real game data - comparison deltas
+   for gains/losses/identical items/stable key ordering, and sort output
+   for all four modes including a no-mutation check on the source array.
 4. **Equipment affix system** — pending. *(Note: a first version of
    affixes already exists - `ItemAffix`/`rollAffixValue` in `data.ts`,
    1-4 rolls per item, core stats + hp/mp/crit. This item is about
