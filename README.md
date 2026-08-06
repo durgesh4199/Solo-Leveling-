@@ -71,7 +71,12 @@ engine, no external art/font dependencies — built to run on:
   rate a spent stat point does, so the two systems never feel inconsistent
 - **Rarity** — 7 tiers, common up to godly (common → uncommon → rare →
   epic → legendary → mythic → godly), each both rarer and a bigger
-  multiplier on every affix it rolls than the last
+  multiplier on every affix it rolls than the last. Base odds off a plain
+  kill are deliberately thin at the top (legendary 3% · mythic 0.8% ·
+  godly 0.1%) - what actually gets you there is the bonuses stacking on
+  top: elite kills, boss kills, buying from the Shop, and **gate rank**
+  (E→S) all push the odds up, so an S-rank boss kill has a real shot at
+  the top tiers an E-rank trash kill just doesn't
 - **Inventory** — three sub-tabs, each its own menu: **Gear** (a paperdoll
   equipment grid - Amulet/Helmet across the top with Weapon and Ring
   flanking the Hunter, Body Armor and Legs stacked below, connected by

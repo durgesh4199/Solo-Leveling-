@@ -1,4 +1,4 @@
-import { GATES_DATA, POTIONS, STAT_TUNING, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rollGateModifier, rollRarity, rollShopStock, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
+import { GATES_DATA, POTIONS, STAT_TUNING, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
 import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 
 /** Events the shader/particle FX layer cares about, separate from the
@@ -397,10 +397,11 @@ export class Game {
     const chance = Math.min(1, baseChance + lootBonus);
     if (Math.random() >= chance) return;
 
-    const rarityBonus = (unit.isElite ? 0.15 : 0) + (battle.isBossWave ? 0.3 : 0);
-    const rarity = rollRarity(rarityBonus);
     const gate = GATES_DATA.find((g) => g.id === battle.gateId);
-    const item = generateLoot(gate?.rank ?? "E", rarity);
+    const rank = gate?.rank ?? "E";
+    const rarityBonus = (unit.isElite ? 0.15 : 0) + (battle.isBossWave ? 0.3 : 0) + rankRarityBonus(rank);
+    const rarity = rollRarity(rarityBonus);
+    const item = generateLoot(rank, rarity);
     this.state.bag = [...this.state.bag, item];
     this.showBattleToast(battle, { text: item.name, kind: "loot", rarity });
   }

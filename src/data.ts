@@ -93,17 +93,27 @@ export function rankForLevel(level: number): Rank {
  *  step with how far into the game (E->S) it dropped. */
 const RANK_INDEX: Record<Rank, number> = { E: 0, D: 1, C: 2, B: 3, A: 4, S: 5 };
 
+/** Added on top of a roll's source bonus (elite/boss/shop - see
+ *  rollRarity callers) so *how far into the game you are* also improves
+ *  rarity odds, not just an item's raw power - an S-rank kill has a real
+ *  shot at the top tiers an E-rank kill doesn't, on top of hitting harder
+ *  numbers either way. */
+const RANK_RARITY_BONUS: Record<Rank, number> = { E: 0, D: 0.05, C: 0.1, B: 0.15, A: 0.2, S: 0.25 };
+
 /** Seven tiers, common up to godly. `statMult` scales every affix an item
  *  rolls (see rollAffixValue); `weight` is its base share of a roll before
- *  any luck bonus is applied. */
+ *  any luck bonus is applied - legendary/mythic/godly are deliberately
+ *  thin at the base rate (3% / 0.8% / 0.1%) so they stay a real event even
+ *  after a long grind; bonuses (elite/boss/rank/shop) are what actually
+ *  make them reachable. */
 export const RARITY_META: Record<ItemRarity, { label: string; color: string; weight: number; statMult: number }> = {
-  common: { label: "Common", color: "#9397ab", weight: 0.36, statMult: 1 },
-  uncommon: { label: "Uncommon", color: "#7fd88f", weight: 0.26, statMult: 1.35 },
+  common: { label: "Common", color: "#9397ab", weight: 0.4, statMult: 1 },
+  uncommon: { label: "Uncommon", color: "#7fd88f", weight: 0.27, statMult: 1.35 },
   rare: { label: "Rare", color: "#6fa8f5", weight: 0.18, statMult: 1.8 },
   epic: { label: "Epic", color: "#b57bfa", weight: 0.11, statMult: 2.5 },
-  legendary: { label: "Legendary", color: "#f5c451", weight: 0.055, statMult: 3.4 },
-  mythic: { label: "Mythic", color: "#ff6b5b", weight: 0.02, statMult: 4.6 },
-  godly: { label: "Godly", color: "#fef6e4", weight: 0.005, statMult: 6.5 }
+  legendary: { label: "Legendary", color: "#f5c451", weight: 0.03, statMult: 3.4 },
+  mythic: { label: "Mythic", color: "#ff6b5b", weight: 0.008, statMult: 4.6 },
+  godly: { label: "Godly", color: "#fef6e4", weight: 0.001, statMult: 6.5 }
 };
 const RARITY_ORDER: ItemRarity[] = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "godly"];
 
@@ -140,6 +150,13 @@ const RARE_SUFFIXES = ["of the Abyss", "of the Monarch", "of the Void", "of Eter
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+/** How much a gate's rank adds to any rarity roll happening in its
+ *  context (a kill inside it, or the Shop's stock at that rank) - stacks
+ *  additively with the roll's own source bonus (elite/boss/shop). */
+export function rankRarityBonus(rank: Rank): number {
+  return RANK_RARITY_BONUS[rank];
 }
 
 /** `bonus` (0..~1) skews the roll toward the top of the table - each tier
@@ -233,10 +250,12 @@ export function priceForItem(item: LootItem): number {
 }
 
 /** Rolls a fresh batch of purchasable gear at the given rank - the Shop's
- *  stock. Slightly loot-luckier than a kill drop (small rarity bonus) since
- *  it's gold you had to earn, not a free kill roll. */
+ *  stock. Slightly loot-luckier than a plain kill drop (small flat bonus)
+ *  since it's gold you had to earn, not a free kill roll - plus the same
+ *  rank bonus a kill at that rank would get. */
 export function rollShopStock(rank: Rank, count = 6): LootItem[] {
-  return Array.from({ length: count }, () => generateLoot(rank, rollRarity(0.05)));
+  const bonus = 0.05 + rankRarityBonus(rank);
+  return Array.from({ length: count }, () => generateLoot(rank, rollRarity(bonus)));
 }
 
 /** Rolled once per gate run - swaps up the risk/reward on every attempt
