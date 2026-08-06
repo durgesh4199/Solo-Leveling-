@@ -1,5 +1,5 @@
 import { ARCHETYPE_BY_RANK, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
-import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
+import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, ShadowRecord, StatKey, VfxKind, WavePlanEntry } from "./types";
 import { evaluateCondition } from "./systems/progress/conditions";
 import type { ProgressContext } from "./systems/progress/types";
 import { COUNTER_KEYS } from "./systems/progress/types";
@@ -8,6 +8,7 @@ import type { TitleDef } from "./systems/titles/types";
 import { ACHIEVEMENTS } from "./systems/achievements/data";
 import { clearSave, loadSave, writeSave } from "./systems/save";
 import type { SavedGameState } from "./systems/save/types";
+import { SHADOW_MAX_LEVEL, SHADOW_SKILLS, effectiveShadowPower, shadowXpToNext } from "./systems/shadows/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -218,7 +219,7 @@ export class Game {
     const p = this.state.player;
     const statSum = (["str", "agi", "int", "vit", "per"] as StatKey[])
       .reduce((sum, key) => sum + this.effectiveStat(key), 0);
-    const shadowPower = this.state.shadowArmy.reduce((sum, s) => sum + s.power, 0);
+    const shadowPower = this.state.shadowArmy.reduce((sum, s) => sum + effectiveShadowPower(s), 0);
     return Math.round(
       p.level * 15 +
       statSum * 8 +
@@ -735,15 +736,120 @@ export class Game {
   /** A deployed Shadow auto-assists every player action, striking whatever
    *  is currently targeted right after the player's own hit lands - with
    *  its own lunge animation so it visibly joins the fight too. */
+  /** Adds XP to one Shadow (a small flat amount per strike, more on a
+   *  kill) and rolls it over into levels exactly like the player's own
+   *  grantXp - capped at SHADOW_MAX_LEVEL so a single Shadow's power
+   *  can't grow without bound across a very long-lived save. Floats a
+   *  global toast on level-up (visible from any screen, matching
+   *  Title/Achievement unlocks) since leveling happens automatically
+   *  mid-battle with no other feedback surface for it. */
+  private grantShadowXp(shadowId: string, killedThisAction: boolean) {
+    const idx = this.state.shadowArmy.findIndex((s) => s.id === shadowId);
+    if (idx === -1) return;
+    const shadow = { ...this.state.shadowArmy[idx] };
+    if (shadow.level < SHADOW_MAX_LEVEL) {
+      shadow.xp += 2 + (killedThisAction ? 4 : 0);
+      let leveled = false;
+      while (shadow.level < SHADOW_MAX_LEVEL && shadow.xp >= shadowXpToNext(shadow.level)) {
+        shadow.xp -= shadowXpToNext(shadow.level);
+        shadow.level += 1;
+        leveled = true;
+      }
+      if (shadow.level >= SHADOW_MAX_LEVEL) shadow.xp = 0;
+      if (leveled) this.showGlobalToast(`${shadow.name} reached Level ${shadow.level}!`, "shadow");
+    }
+    const army = [...this.state.shadowArmy];
+    army[idx] = shadow;
+    this.state.shadowArmy = army;
+  }
+
+  /** +1 Loyalty (capped 100), once per wave cleared while deployed - never
+   *  decays (see the ShadowRecord.loyalty doc comment on why). */
+  private growShadowLoyalty(shadowId: string) {
+    const idx = this.state.shadowArmy.findIndex((s) => s.id === shadowId);
+    if (idx === -1) return;
+    const shadow = { ...this.state.shadowArmy[idx], loyalty: Math.min(100, this.state.shadowArmy[idx].loyalty + 1), battlesFought: this.state.shadowArmy[idx].battlesFought + 1 };
+    const army = [...this.state.shadowArmy];
+    army[idx] = shadow;
+    this.state.shadowArmy = army;
+  }
+
+  /** A deployed Shadow auto-assists every player action, striking whatever
+   *  is currently targeted right after the player's own hit lands - with
+   *  its own lunge animation so it visibly joins the fight too. Which
+   *  archetype it is (see SHADOW_SKILLS) decides *how* it fights: a
+   *  passive that modifies every strike, and a % chance per action for an
+   *  Active Skill to replace the normal single hit with something bigger
+   *  (a second strike, an AoE, a guaranteed crit, ...) - six genuinely
+   *  different Shadows to fight alongside, not one damage number reskinned
+   *  six times. */
   private companionStrike(battle: BattleState) {
     const shadow = this.state.shadowArmy.find((s) => s.deployed);
     if (!shadow) return;
     const target = this.currentTarget(battle);
     if (!target) return;
-    const dmg = Math.max(1, Math.round(shadow.power + (Math.random() * 4 - 2) - target.def * 0.5));
-    this.setUnitVfx(target, "slash");
-    this.applyDamage(battle, target, dmg);
-    this.clearHitFlagLater(target.uid);
+
+    const { passive, active } = SHADOW_SKILLS[shadow.archetype];
+    const power = effectiveShadowPower(shadow);
+    const activeTriggers = Math.random() * 100 < active.effect.chance;
+    let killedAny = false;
+
+    const strike = (tgt: EnemyUnit, dmgMult: number, ignoreDef: boolean, forceCrit: boolean) => {
+      let dmg = Math.max(1, Math.round(power * dmgMult + (Math.random() * 4 - 2) - (ignoreDef ? 0 : tgt.def * 0.5)));
+      if (passive.effect.key === "executeBonus" && tgt.hp <= tgt.maxHp * passive.effect.hpThresholdPct) {
+        dmg = Math.round(dmg * (1 + passive.effect.bonusPct));
+      } else if (passive.effect.key === "damageMult") {
+        dmg = Math.round(dmg * (1 + passive.effect.pct));
+      }
+      const isCrit = forceCrit || (passive.effect.key === "critChance" && Math.random() * 100 < passive.effect.chance);
+      if (isCrit) dmg = Math.round(dmg * 1.8);
+
+      this.setUnitVfx(tgt, isCrit ? "flurry" : "slash");
+      const dealt = this.applyDamage(battle, tgt, dmg, isCrit);
+      if (!tgt.alive) killedAny = true;
+      this.clearHitFlagLater(tgt.uid);
+
+      if (passive.effect.key === "manaOnHit") {
+        const maxMp = this.effectiveMaxMp();
+        if (this.state.player.mp < maxMp) {
+          this.state.player = { ...this.state.player, mp: Math.min(maxMp, this.state.player.mp + passive.effect.amount) };
+        }
+      } else if (passive.effect.key === "healOnHit") {
+        const maxHp = this.effectiveMaxHp();
+        const heal = Math.round(dealt * passive.effect.pct);
+        const healed = Math.min(maxHp, this.state.player.hp + heal) - this.state.player.hp;
+        if (healed > 0) {
+          this.state.player = { ...this.state.player, hp: this.state.player.hp + healed };
+          this.triggerFloatPlayer(battle, `+${healed}`, "heal");
+        }
+      }
+    };
+
+    if (activeTriggers && active.effect.key === "doubleStrike") {
+      strike(target, 1, false, false);
+      if (target.alive) strike(target, 1, false, false);
+    } else if (activeTriggers && active.effect.key === "bigHit") {
+      strike(target, active.effect.mult, false, false);
+    } else if (activeTriggers && active.effect.key === "flurry") {
+      for (let i = 0; i < active.effect.hits && target.alive; i++) strike(target, active.effect.eachPct, false, false);
+    } else if (activeTriggers && active.effect.key === "armorPierce") {
+      strike(target, 1, true, false);
+    } else if (activeTriggers && active.effect.key === "guaranteedCrit") {
+      strike(target, 1, false, true);
+    } else if (activeTriggers && active.effect.key === "aoe") {
+      for (const enemy of battle.enemies) {
+        if (enemy.alive) strike(enemy, active.effect.eachPct, false, false);
+      }
+    } else {
+      strike(target, 1, false, false);
+    }
+
+    if (killedAny && passive.effect.key === "goldOnKill" && Math.random() * 100 < passive.effect.chance) {
+      this.state.player = { ...this.state.player, gold: this.state.player.gold + passive.effect.amount };
+      this.incrementCounter(COUNTER_KEYS.goldEarnedTotal, passive.effect.amount);
+    }
+
+    this.grantShadowXp(shadow.id, killedAny);
 
     battle.shadowLunge = true;
     this.vfxSeq += 1;
@@ -758,6 +864,8 @@ export class Game {
   }
 
   private onWaveCleared(battle: BattleState) {
+    const deployed = this.state.shadowArmy.find((s) => s.deployed);
+    if (deployed) this.growShadowLoyalty(deployed.id);
     if (battle.isBossWave) {
       this.state.gatesCleared = { ...this.state.gatesCleared, [battle.gateId]: true };
       this.state.battle = { ...battle, over: true, result: "gate-clear", locked: false };
@@ -1035,12 +1143,14 @@ export class Game {
     if (!battle || (battle.result !== "wave-clear" && battle.result !== "gate-clear")) return;
     const rank = rankForLevel(this.state.player.level);
     const sourceName = battle.enemies[0]?.name ?? "Unknown";
-    const shadow = {
+    const shadow: ShadowRecord = {
       id: `${battle.gateId}-w${battle.waveIndex}-${Date.now()}`,
       name: `Shadow of the ${sourceName}`,
       rank,
       type: sourceName,
+      archetype: ARCHETYPE_BY_RANK[rank],
       power: SHADOW_RANK_POWER[rank],
+      level: 1, xp: 0, loyalty: 0, battlesFought: 0,
       deployed: false
     };
     this.emitFx({ kind: "portal" });
@@ -1062,6 +1172,36 @@ export class Game {
   deployShadow(id: string) {
     this.state.shadowArmy = this.state.shadowArmy.map((s) => ({ ...s, deployed: s.id === id ? !s.deployed : false }));
     this.notify();
+  }
+
+  /** Duplicate-handling per EXPANSION_ROADMAP.md's item #5 scope: merges
+   *  `keepId` with the lowest-level *other* Shadow sharing its species
+   *  (`type`) - the weakest duplicate is the one consumed by default, so
+   *  merging never costs you your best copy of a species by accident.
+   *  The survivor gains levels (half the consumed one's, minimum 1) and
+   *  a Loyalty bump; the consumed Shadow is removed outright. Returns the
+   *  consumed Shadow's name for a confirmation UI, or null if `keepId`
+   *  has no duplicate to merge with. ("Convert to Shadow Essence" is
+   *  deferred to Crafting, #14 - there's nothing to spend Essence on
+   *  yet.) */
+  mergeShadow(keepId: string): { consumedName: string } | null {
+    const army = this.state.shadowArmy;
+    const keep = army.find((s) => s.id === keepId);
+    if (!keep) return null;
+    const duplicates = army.filter((s) => s.id !== keepId && s.type === keep.type);
+    if (duplicates.length === 0) return null;
+    const consume = duplicates.reduce((lowest, s) => (s.level < lowest.level ? s : lowest), duplicates[0]);
+
+    const merged: ShadowRecord = {
+      ...keep,
+      level: Math.min(SHADOW_MAX_LEVEL, keep.level + Math.max(1, Math.floor(consume.level / 2))),
+      loyalty: Math.min(100, keep.loyalty + 10)
+    };
+    this.state.shadowArmy = army
+      .filter((s) => s.id !== consume.id)
+      .map((s) => (s.id === keepId ? merged : s));
+    this.notify();
+    return { consumedName: consume.name };
   }
 
   continueAfterWave() {

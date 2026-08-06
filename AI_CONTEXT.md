@@ -159,6 +159,13 @@ gain-toast animation timers stay valid):
 **Shadows** — grid of every Shadow ever Arisen (offered after *every* wave
 clear, trash or boss, not just bosses). Rank + species filter dropdowns.
 One deploy slot; deploying a new Shadow auto-recalls the previous one.
+Every Shadow now has its own level/XP (grows from fighting while
+deployed), Loyalty (grows from wave clears while deployed, feeds a small
+power bonus, never decays), a derived Mood label, and one of 6
+archetype-based passive+active skill pairs that make *how* it fights
+alongside you meaningfully different by species (see "Shadow Collection"
+below) - shown right on the card, plus a "Merge Duplicate" button when a
+same-species duplicate exists.
 
 **Inventory** — 3 sub-tabs in one screen:
 - **Gear** — paperdoll equipment grid (6 slots: weapon/helmet/chest/legs/
@@ -269,6 +276,46 @@ pulses gold whenever it increases).
   equivalent). If several unlock in the same pass only the last toast of
   the burst is visible; all of them still land correctly in the
   unlocked-id lists regardless - known, accepted limitation, not a bug.
+
+## Shadow Collection (Phase 2 item #5 of EXPANSION_ROADMAP.md)
+
+- **`src/systems/shadows/data.ts`** - `SHADOW_SKILLS: Record<Archetype,
+  ShadowSkillSet>`, one passive + one active per archetype (goblin/orc/
+  wraith/knight/beast/wyrm - the same 6 that drive portrait art), plus
+  `effectiveShadowPower()`, `shadowXpToNext()`, `shadowMood()`,
+  `SHADOW_MAX_LEVEL`. `src/systems/shadows/types.ts` has the
+  `ShadowPassiveEffect`/`ShadowActiveEffect` discriminated unions - every
+  effect kind needs a case in `Game.companionStrike`'s `strike()` closure
+  (store.ts) to actually do anything; adding to the union alone is not
+  enough (same "no placeholders" discipline as AffixKey).
+- **`Game.companionStrike`** (store.ts) - rewritten around the passive/
+  active split: `active.effect.chance` rolled once per call; if it hits,
+  the matching branch (doubleStrike/bigHit/flurry/armorPierce/
+  guaranteedCrit/aoe) replaces the normal single hit; the passive's
+  effect always applies inside the shared `strike()` closure regardless
+  of which branch ran. `Game.applyDamage`'s return value (actual damage
+  dealt, post-guard-mitigation - added in the affix-system work, #4) is
+  what several passives (healOnHit, goldOnKill-via-`killedAny`) key off.
+- **`Game.grantShadowXp(shadowId, killedThisAction)`** - called at the end
+  of every `companionStrike`; **`Game.growShadowLoyalty(shadowId)`** -
+  called from `onWaveCleared` if a Shadow was deployed for that wave. Both
+  look the Shadow up by id and replace it immutably in `shadowArmy`
+  (`array[idx] = {...updated}`), the same pattern `deployShadow` already
+  used.
+- **`Game.mergeShadow(keepId)`** - public, merges with the *lowest-level*
+  other Shadow sharing `type` (species) - the weakest duplicate, so
+  merging never costs a player their best copy by accident.
+- **Testing note**: verifying `companionStrike`'s 12 formulas (6 passives
+  × 6 actives) needs `game.battleAttack()`/`useSkill()`, not `useItem()` -
+  potions don't call `companionStrike` at all. Since the player's own hit
+  lands *before* the companion's, isolate the companion's exact damage by
+  reading the target's `floatText` right after the call (the companion's
+  hit is the last thing to touch it) for single-hit effects, or by
+  computing the player's own expected damage from the same mocked-random
+  value and subtracting it from total HP loss for multi-hit ones (flurry/
+  doubleStrike/aoe). `effectiveShadowPower()` derives from `rank`, not
+  the stored `power` field - overriding `power` in a test fixture does
+  nothing; override `rank` to change a test Shadow's actual combat power.
 
 ## Player aura (visual, not mechanical)
 

@@ -153,7 +153,58 @@ touching anything below.
      to do.
 
 ### Phase 2 — Shadows
-5. Shadow Collection — pending.
+5. **Shadow Collection** — ✅ **Done** (scoped - see deferrals below).
+   `ShadowRecord` gained `archetype`, `level`, `xp`, `loyalty`,
+   `battlesFought`. Every listed property from the brief is either real
+   now or explicitly deferred with a reason - nothing was added as a
+   number that does nothing:
+   - **Level/XP** - a deployed Shadow earns XP on every companionStrike
+     (2 base, +4 more if that strike kills), rolling over into levels
+     exactly like the player's own XP, capped at `SHADOW_MAX_LEVEL` (30)
+     so a single Shadow's power can't grow unboundedly. Floats a global
+     toast on level-up.
+   - **Stats** - scoped to what the game's actual mechanics use: a single
+     `power` stat (the only one anything reads - Shadows have no HP, take
+     no hits, don't guard). `effectiveShadowPower()` = base rank power +
+     level growth (8%/level of base) + a small Loyalty bonus, mirroring
+     the player's raw-stat-vs-effectiveStat split (`power` on the record
+     stays the stable Arise-time snapshot).
+   - **Passive Skill / Active Skill** - the real depth of this item: 6
+     archetypes (the same 6 that already drive portrait/rim-glow), each
+     with one always-on passive and one active that has a % chance per
+     companionStrike to replace the normal hit with something bigger -
+     `src/systems/shadows/data.ts`'s `SHADOW_SKILLS`. Goblin (execute
+     bonus / double strike), Orc (flat damage% / 2.2x big hit), Wraith
+     (mana-on-hit / 3-hit flurry), Knight (heal-on-hit / armor pierce),
+     Beast (raised crit chance / guaranteed crit), Wyrm (gold-on-kill /
+     AoE breath). All 12 formulas verified via a live `Game` instance
+     with deterministic (mocked) RNG, not just isolated math.
+   - **Loyalty** - +1 per wave cleared while deployed, capped 100, never
+     decays (a standing "fought together" record, not a punishable
+     resource with no clear driver to justify decay).
+   - **Mood** - derived from Loyalty (`shadowMood()`), not a second
+     independently-tracked number - there's no other mechanic (feeding,
+     training, ...) to drive a separate Mood value, and inventing one
+     ungrounded would be exactly the kind of scope creep the standing
+     rules warn against. Still real and displayed, just computed.
+   - **Duplicate handling: Merge** - `Game.mergeShadow(keepId)` merges
+     with the *weakest* same-species duplicate (never costs you your best
+     copy by accident), transferring half its levels (minimum 1) and a
+     Loyalty bump to the survivor. UI: a minimal extension of the
+     existing Shadow Army screen (a "Merge Duplicate" button + confirm),
+     not a redesign - that's #7's job.
+
+   **Deferred, not dropped:**
+   - **Equipment Slots** - needs a management UI to equip/unequip through,
+     which is explicitly #7 (Shadow Management UI), the very next item.
+     Building it here would just get redone.
+   - **Evolution Stage** - is #6 (Shadow Evolution) by name; adding an
+     `evolutionStage` field now with nothing to change it would be inert
+     - the textbook placeholder the standing rules forbid.
+   - **Convert duplicates to Shadow Essence** - Essence is a Crafting
+     material (#14, not built); a currency with nothing to spend it on
+     yet is the same placeholder problem. Merge (above) is the working
+     duplicate-handling path until Crafting exists.
 6. Shadow Evolution — pending.
 7. Shadow Management UI — pending.
 

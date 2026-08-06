@@ -85,7 +85,24 @@ export interface ShadowRecord {
   name: string;
   rank: Rank;
   type: string;
+  /** Which of the 6 passive/active skill sets this Shadow uses (see
+   *  src/systems/shadows/) - set once at Arise time from the source
+   *  monster's gate-rank archetype, stored explicitly rather than
+   *  re-derived from `rank` every read. */
+  archetype: Archetype;
+  /** Base power at Arise time - stays a stable historical/rarity
+   *  indicator. What combat and Power Score actually use is
+   *  `effectiveShadowPower()` (base + level growth + loyalty bonus),
+   *  mirroring the player's own raw-stat-vs-effectiveStat split. */
   power: number;
+  level: number;
+  xp: number;
+  /** 0-100, grows +1 per wave cleared while deployed, never decays -
+   *  a standing record of "how long we've fought together", not a
+   *  punishable resource. Feeds a small effectiveShadowPower bonus and
+   *  the derived Mood label (see shadowMood() in systems/shadows/). */
+  loyalty: number;
+  battlesFought: number;
   deployed: boolean;
 }
 
@@ -232,7 +249,7 @@ export interface ProgressState {
 export interface GlobalToast {
   id: number;
   text: string;
-  kind: "achievement" | "title" | "info";
+  kind: "achievement" | "title" | "info" | "shadow";
 }
 
 export interface GameState {

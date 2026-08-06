@@ -72,7 +72,20 @@ engine, no external art/font dependencies — built to run on:
   a short interstitial before continuing, adding that wave's monster as a
   permanent Shadow ranked to your current Hunter rank - not just the boss.
   The Shadow Army screen filters by rank and by species so a large roster
-  stays easy to manage
+  stays easy to manage. Every Shadow now **levels up** from fighting
+  alongside you (more from a kill than a graze), grows **Loyalty** the
+  longer you fight together (never decays, feeds a small power bonus, and
+  shows as a Mood label - Wary → Reserved → Content → Devoted), and
+  belongs to one of 6 families with a genuinely different fighting style:
+  **Goblins** hit harder as a target gets low and sometimes strike twice;
+  **Orcs** hit harder always, with a chance at a single huge blow;
+  **Wraiths** trickle you MP on every hit and can unleash a 3-hit flurry;
+  **Knights** heal you off their own damage and can ignore a target's
+  Defense outright; **Beasts** crit often and can guarantee one; **Wyrms**
+  sometimes drop bonus gold on a kill and can breathe damage across the
+  whole enemy wave at once. A "Merge Duplicate" button on a card with a
+  same-species double consumes the weaker copy for levels + Loyalty on
+  the one you keep
 - **Power** — one combined "how strong am I" number, shown on the Title
   screen and prominently on Status: level, every effective stat (gear
   folds in automatically), effective max HP/MP, crit chance, and the
