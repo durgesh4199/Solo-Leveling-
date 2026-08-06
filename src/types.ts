@@ -90,10 +90,24 @@ export interface SkillDef {
   description: string;
 }
 
-export type VfxKind = "slash" | "flurry" | null;
+export type VfxKind = "slash" | "flurry" | "smash" | null;
 export type LungeSide = "player" | null;
-export type FloatKind = "dmg" | "heal" | "crit";
+export type FloatKind = "dmg" | "heal" | "crit" | "miss";
 export type EnemyAction = "attack" | "guard" | "special";
+
+export type PotionTier = "minor" | "greater" | "supreme";
+
+/** A consumable's definition - HP/MP restoration, three tiers apiece so
+ *  there's a cheap early option and a real late-game one. */
+export interface PotionDef {
+  id: string;
+  name: string;
+  kind: "hp" | "mp";
+  tier: PotionTier;
+  amount: number;
+  cost: number;
+  icon: string;
+}
 
 export interface FloatText {
   text: string;
@@ -152,6 +166,7 @@ export interface BattleState {
   locked: boolean;
   playerHit: boolean;
   skillPanelOpen: boolean;
+  itemPanelOpen: boolean;
 
   vfxId?: number;
   vfxPlayer?: VfxKind;
@@ -177,7 +192,8 @@ export interface GameState {
   player: PlayerState;
   gatesCleared: Record<string, boolean>;
   shadowArmy: ShadowRecord[];
-  inventory: { potions: number };
+  /** Potion id (see PotionDef) -> count owned. */
+  inventory: { potions: Record<string, number> };
   bag: LootItem[];
   battle: BattleState | null;
 }

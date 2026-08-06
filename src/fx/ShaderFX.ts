@@ -135,6 +135,16 @@ export class ShaderFX {
     this.pushRadial(x, y, color, 0, 50, 650);
   }
 
+  /** A telegraphed enemy special landing - one big ray-burst shockwave
+   *  plus a heavier outward particle spray, distinct from both the
+   *  player's own slash and crit-flurry so a special reads as its own
+   *  kind of threat instead of just "a harder version of a normal hit". */
+  smash(x: number, y: number, color: string) {
+    if (!this.enabled) return;
+    this.pushRadial(x, y, color, 2, 95, 520);
+    this.spawnBurst(x, y, hexToRgb(color), 36, 130, 0.8, true);
+  }
+
   impactSparks(x: number, y: number, color: string) {
     if (!this.enabled) return;
     this.spawnBurst(x, y, hexToRgb(color), 14, 70, 0.55);

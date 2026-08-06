@@ -3,13 +3,17 @@ import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { enemyPortrait, hunterPortrait, shadowPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
-import { RARITY_META, SKILLS } from "../data";
+import { POTIONS, RARITY_META, SKILLS } from "../data";
 import type { EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
 const VIOLET_SOFT = "#b5abfc";
 const VIOLET_DEEP = "#9184d9";
 const VIOLET_PALE = "#e7e5fe";
+// Every hit that actually lands (slash/flurry/smash) reads as blood-red -
+// violet stays reserved for the non-damage effects (guard, portal, dissolve,
+// level-up) so "damage happened" has one consistent, unmistakable color.
+const BLOOD = "#e0342b";
 
 function center(canvas: HTMLElement, target: HTMLElement) {
   const c = canvas.getBoundingClientRect();
@@ -21,7 +25,7 @@ function enemySlotHtml(unit: EnemyUnit, art: string, isBoss: boolean, small: boo
   return `
     <div class="enemy-slot" data-uid="${unit.uid}" style="display:flex;flex-direction:column;align-items:center;gap:4px;">
       <div class="arena-portrait ${isBoss ? "is-boss" : ""} ${unit.isElite ? "is-elite" : ""} ${small ? "small" : ""}">
-        <div class="impact-glow"></div>
+        <div class="impact-glow dmg"></div>
         <div class="art-slot lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${art}</div>
         ${unit.isElite ? `<div class="elite-badge">${icon("sparkles")}</div>` : ""}
         <div class="vfx-layer" style="display:none;">
@@ -78,6 +82,7 @@ export const battleScreen: ScreenModule = (root, game) => {
               <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait()}</div>
               <div id="player-vfx" class="vfx-layer" style="display:none;">
                 <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
+                <div class="power-ring"></div>
               </div>
               <div id="player-guard-ring" class="guard-ring" style="display:none;"></div>
               <div id="player-float" class="float-num" style="display:none;"></div>
@@ -118,7 +123,7 @@ export const battleScreen: ScreenModule = (root, game) => {
         <button class="btn btn-secondary action-btn" data-action="battle-attack">${icon("sword")} Attack</button>
         <button class="btn btn-secondary action-btn" data-action="toggle-skills">${icon("flame")} Skills</button>
         <button class="btn btn-secondary action-btn" data-action="battle-guard">${icon("shield")} Guard</button>
-        <button class="btn btn-secondary action-btn" data-action="battle-item">${icon("flask")} Potion (<span id="potion-count"></span>)</button>
+        <button class="btn btn-secondary action-btn" data-action="toggle-items">${icon("flask")} Items</button>
 
         <div id="skill-panel" style="display:none;position:absolute;left:var(--space-6);right:var(--space-6);bottom:100%;margin-bottom:var(--space-2);background:var(--color-surface);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);overflow:hidden;">
           ${SKILLS.map((s) => `
@@ -129,6 +134,19 @@ export const battleScreen: ScreenModule = (root, game) => {
                 <div class="skill-desc" style="font-size:11px;color:var(--color-neutral-500);">${s.description}</div>
               </div>
               <div class="tag tag-outline skill-cost" style="font-size:10px;flex-shrink:0;">${s.mpCost} MP</div>
+            </div>
+          `).join("")}
+        </div>
+
+        <div id="item-panel" style="display:none;position:absolute;left:var(--space-6);right:var(--space-6);bottom:100%;margin-bottom:var(--space-2);max-height:264px;overflow-y:auto;background:var(--color-surface);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);box-shadow:var(--shadow-lg);">
+          ${POTIONS.map((p) => `
+            <div class="item-row" data-potion="${p.id}" style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border-bottom:1px solid var(--color-neutral-800);cursor:pointer;">
+              <span style="font-size:18px;color:var(--color-accent-300);flex-shrink:0;">${icon(p.icon as any)}</span>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:500;">${p.name}</div>
+                <div style="font-size:11px;color:var(--color-neutral-500);">Restores ${p.amount} ${p.kind.toUpperCase()}</div>
+              </div>
+              <div class="tag tag-outline item-count" style="font-size:10px;flex-shrink:0;">x<span></span></div>
             </div>
           `).join("")}
         </div>
@@ -152,7 +170,6 @@ export const battleScreen: ScreenModule = (root, game) => {
   const playerHpFill = $("#player-hp-fill");
   const playerHpTrack = $("#player-hp-track");
   const playerMpFill = $("#player-mp-fill");
-  const potionCountEl = $("#potion-count");
   const resultPanel = $("#battle-result");
   const resultTitle = $("#result-title");
   const resultSubtitle = $("#result-subtitle");
@@ -162,8 +179,9 @@ export const battleScreen: ScreenModule = (root, game) => {
   const attackBtn = $<HTMLButtonElement>('[data-action="battle-attack"]');
   const skillsToggleBtn = $<HTMLButtonElement>('[data-action="toggle-skills"]');
   const guardBtn = $<HTMLButtonElement>('[data-action="battle-guard"]');
-  const itemBtn = $<HTMLButtonElement>('[data-action="battle-item"]');
+  const itemsToggleBtn = $<HTMLButtonElement>('[data-action="toggle-items"]');
   const skillPanel = $("#skill-panel");
+  const itemPanel = $("#item-panel");
 
   const playerPortrait = $("#player-portrait");
   const playerGlow = $("#player-glow");
@@ -192,7 +210,7 @@ export const battleScreen: ScreenModule = (root, game) => {
         case "battle-attack": return game.battleAttack();
         case "toggle-skills": return game.toggleSkillPanel();
         case "battle-guard": return game.battleGuard();
-        case "battle-item": return game.battleItem();
+        case "toggle-items": return game.toggleItemPanel();
         case "arise-shadow": return game.ariseShadow();
         case "battle-continue": return game.continueAfterWave();
         case "retreat-battle": return game.retreatBattle();
@@ -208,20 +226,44 @@ export const battleScreen: ScreenModule = (root, game) => {
     });
   });
 
+  root.querySelectorAll<HTMLElement>(".item-row").forEach((row) => {
+    row.addEventListener("click", () => {
+      if (row.classList.contains("is-disabled")) return;
+      const id = row.dataset.potion;
+      if (id) game.useItem(id);
+    });
+  });
+
   const unsubFx = game.onFx((e) => {
     switch (e.kind) {
       case "slash":
       case "flurry": {
         if (e.side === "player") {
           const c = center(fxCanvas, playerPortrait);
-          if (e.kind === "slash") shaderFx.slash(c.x, c.y, VIOLET, 160);
-          else shaderFx.flurry(c.x, c.y, VIOLET, 160);
+          if (e.kind === "slash") shaderFx.slash(c.x, c.y, BLOOD, 160);
+          else shaderFx.flurry(c.x, c.y, BLOOD, 160);
         } else if (e.targetUid) {
           const slot = findEnemySlot(e.targetUid);
           if (slot) {
             const c = center(fxCanvas, slot);
-            if (e.kind === "slash") shaderFx.slash(c.x, c.y, VIOLET, 20);
-            else shaderFx.flurry(c.x, c.y, VIOLET, 20);
+            if (e.kind === "slash") shaderFx.slash(c.x, c.y, BLOOD, 20);
+            else shaderFx.flurry(c.x, c.y, BLOOD, 20);
+          }
+        }
+        break;
+      }
+      case "smash": {
+        // Enemy specials only ever land on the player (side is always
+        // "player" here - see enemyTurn) but keep the shape consistent
+        // with slash/flurry in case that changes later.
+        if (e.side === "player") {
+          const c = center(fxCanvas, playerPortrait);
+          shaderFx.smash(c.x, c.y, BLOOD);
+        } else if (e.targetUid) {
+          const slot = findEnemySlot(e.targetUid);
+          if (slot) {
+            const c = center(fxCanvas, slot);
+            shaderFx.smash(c.x, c.y, BLOOD);
           }
         }
         break;
@@ -375,12 +417,11 @@ export const battleScreen: ScreenModule = (root, game) => {
     playerHpFill.style.width = `${Math.round((p.hp / p.maxHp) * 100)}%`;
     playerHpTrack.classList.toggle("hit", !!b.playerHit);
     playerMpFill.style.width = `${Math.round((p.mp / p.maxMp) * 100)}%`;
-    potionCountEl.textContent = String(game.state.inventory.potions);
 
     attackBtn.disabled = b.locked;
     guardBtn.disabled = b.locked;
     skillsToggleBtn.disabled = b.locked;
-    itemBtn.disabled = b.locked || game.state.inventory.potions <= 0;
+    itemsToggleBtn.disabled = b.locked;
 
     skillPanel.style.display = b.skillPanelOpen ? "block" : "none";
     root.querySelectorAll<HTMLElement>(".skill-row").forEach((row) => {
@@ -397,7 +438,21 @@ export const battleScreen: ScreenModule = (root, game) => {
       desc.textContent = locked ? `Unlocks at Level ${def.unlockLevel}` : def.description;
     });
 
+    itemPanel.style.display = b.itemPanelOpen ? "block" : "none";
+    root.querySelectorAll<HTMLElement>(".item-row").forEach((row) => {
+      const id = row.dataset.potion!;
+      const count = game.state.inventory.potions[id] ?? 0;
+      const disabled = count <= 0 || b.locked;
+      row.classList.toggle("is-disabled", disabled);
+      row.style.opacity = disabled ? "0.45" : "1";
+      row.style.cursor = disabled ? "not-allowed" : "pointer";
+      row.querySelector<HTMLElement>(".item-count span")!.textContent = String(count);
+    });
+
+    // playerGlow doubles for damage-taken *and* heal - only tint it blood
+    // red while the active float is a hit landing, not a potion's +HP/MP.
     playerGlow.classList.toggle("show", !!b.playerGlow);
+    playerGlow.classList.toggle("dmg", b.floatPlayer?.kind === "dmg" || b.floatPlayer?.kind === "crit");
     playerVfx.style.display = b.vfxPlayer ? "block" : "none";
     playerVfx.className = `vfx-layer ${b.vfxPlayer ?? ""}`;
     playerGuardRing.style.display = b.guardRing ? "block" : "none";
@@ -423,6 +478,7 @@ export const battleScreen: ScreenModule = (root, game) => {
     if (b.over) {
       actionsRow.style.display = "none";
       skillPanel.style.display = "none";
+      itemPanel.style.display = "none";
       resultPanel.style.display = "flex";
       if (b.result === "defeat") {
         resultTitle.textContent = "You Fell";

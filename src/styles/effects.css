@@ -3,13 +3,17 @@
 .hit { animation: shake 0.22s ease; }
 
 .impact-glow { position: absolute; inset: -14px; border-radius: 50%; opacity: 0; pointer-events: none; background: radial-gradient(circle, var(--color-accent-400) 0%, transparent 70%); }
+/* Damage landing gets its own blood-red glow instead of the generic accent
+   one - heals/guard etc. keep the base (no .dmg) violet tone. */
+.impact-glow.dmg { background: radial-gradient(circle, #e0342b 0%, transparent 70%); }
 .impact-glow.show { animation: impactPulse 0.45s ease; }
 @keyframes impactPulse { 0% { opacity: 0; transform: scale(0.7); } 35% { opacity: 0.6; } 100% { opacity: 0; transform: scale(1.35); } }
 
 .float-num { position: absolute; top: -4px; left: 50%; transform: translateX(-50%); font-size: 21px; font-weight: 600; font-family: var(--font-heading); pointer-events: none; animation: floatUp 0.9s ease forwards; text-shadow: 0 2px 10px rgba(0,0,0,0.7); z-index: 2; }
-.float-num.dmg { color: var(--color-accent-200); }
+.float-num.dmg { color: #ff5449; }
 .float-num.heal { color: var(--color-accent-300); }
-.float-num.crit { color: #f5c451; font-size: 28px; animation: floatUpCrit 1s ease forwards; }
+.float-num.crit { color: #ff2e2e; font-size: 28px; animation: floatUpCrit 1s ease forwards; text-shadow: 0 2px 14px rgba(224, 52, 43, 0.65); }
+.float-num.miss { color: var(--color-neutral-400); font-style: italic; }
 @keyframes floatUp { 0% { opacity: 0; transform: translate(-50%, 6px) scale(0.8); } 15% { opacity: 1; transform: translate(-50%, -6px) scale(1.1); } 100% { opacity: 0; transform: translate(-50%, -46px) scale(1); } }
 @keyframes floatUpCrit { 0% { opacity: 0; transform: translate(-50%, 6px) scale(0.6) rotate(-6deg); } 20% { opacity: 1; transform: translate(-50%, -8px) scale(1.3) rotate(3deg); } 100% { opacity: 0; transform: translate(-50%, -52px) scale(1.1) rotate(0deg); } }
 
@@ -90,6 +94,14 @@
 .flurry-flare { position: absolute; inset: 8px; border-radius: 50%; border: 2px solid var(--color-accent-300); opacity: 0; animation: flareRing 0.5s ease-out 0.1s; }
 @keyframes flareRing { 0% { opacity: 0.9; transform: scale(0.5); } 100% { opacity: 0; transform: scale(1.5); } }
 
+/* An enemy special's own vfx - a thick blood-red shockwave ring, distinct
+   from both the player's slash (thin streaks) and crit-flurry (flare
+   ring), so a telegraphed special reads as its own kind of hit. */
+.power-ring { position: absolute; inset: -4px; border-radius: 50%; border: 3px solid #e0342b; opacity: 0;
+  box-shadow: 0 0 20px 2px rgba(224, 52, 43, 0.55); }
+.smash .power-ring { animation: powerRingBurst 0.5s ease-out; }
+@keyframes powerRingBurst { 0% { opacity: 0.95; transform: scale(0.35); } 55% { opacity: 0.75; } 100% { opacity: 0; transform: scale(1.9); } }
+
 .guard-ring { position: absolute; inset: -12px; border-radius: 50%; border: 2px solid var(--color-accent-400); pointer-events: none; z-index: 3;
   box-shadow: 0 0 24px color-mix(in srgb, var(--color-accent) 45%, transparent), inset 0 0 18px color-mix(in srgb, var(--color-accent) 25%, transparent);
   animation: guardPulse 0.85s ease-out; }
@@ -103,8 +115,10 @@
 @keyframes lungeUp { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(-20px) scale(1.06); } }
 @keyframes lungeDown { 0%, 100% { transform: translateY(0) scale(1); } 30% { transform: translateY(20px) scale(1.06); } }
 
+/* Fires on the player's own damage-dealing actions (Attack/Skills) - blood
+   red, matching every other damage-landing effect. */
 .arena-flash { position: absolute; inset: 0; pointer-events: none; z-index: 1; opacity: 0;
-  background: radial-gradient(60% 80% at 70% 50%, color-mix(in srgb, var(--color-accent) 55%, transparent), transparent 70%);
+  background: radial-gradient(60% 80% at 70% 50%, color-mix(in srgb, #e0342b 55%, transparent), transparent 70%);
   animation: arenaFlash 0.3s ease-out; }
 @keyframes arenaFlash { 0% { opacity: 0.85; } 100% { opacity: 0; } }
 

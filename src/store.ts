@@ -1,4 +1,4 @@
-import { GATES_DATA, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, rankForLevel, rollGateModifier, rollRarity, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
+import { GATES_DATA, POTIONS, SHADOW_RANK_POWER, SKILLS, buildWavePlan, generateLoot, rankForLevel, rollGateModifier, rollRarity, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
 import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
 
 /** Events the shader/particle FX layer cares about, separate from the
@@ -8,6 +8,7 @@ import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameS
 export type FxEvent =
   | { kind: "slash"; side: "player" | "enemy"; targetUid?: string }
   | { kind: "flurry"; side: "player" | "enemy"; targetUid?: string }
+  | { kind: "smash"; side: "player" | "enemy"; targetUid?: string }
   | { kind: "guard"; side: "player" | "enemy"; targetUid?: string }
   | { kind: "shake"; intensity: "light" | "heavy" }
   | { kind: "dissolve"; side: "enemy"; targetUid?: string }
@@ -17,19 +18,17 @@ export type FxEvent =
 type Listener = () => void;
 type FxListener = (e: FxEvent) => void;
 
-const POTION_COST = 40;
-
 const INITIAL_STATE: GameState = {
   screen: "title",
   player: {
-    name: "Hunter", level: 1, xp: 0, xpToNext: 100,
+    name: "Hunter", level: 1, xp: 0, xpToNext: 80,
     hp: 100, maxHp: 100, mp: 30, maxMp: 30,
     statPoints: 0, str: 10, agi: 10, int: 10, vit: 10, per: 10,
     gold: 0, equipment: {}
   },
   gatesCleared: {},
   shadowArmy: [],
-  inventory: { potions: 5 },
+  inventory: { potions: { hp_minor: 3, mp_minor: 1 } },
   bag: [],
   battle: null
 };
@@ -156,7 +155,7 @@ export class Game {
       enemies: this.makeEnemies(gate, entry, trashCount, modifier),
       modifier,
       over: false, result: null, guardRounds: 0, locked: false,
-      playerHit: false, skillPanelOpen: false
+      playerHit: false, skillPanelOpen: false, itemPanelOpen: false
     };
     this.notify();
   }
@@ -179,7 +178,7 @@ export class Game {
       enemyName: entry.isBoss ? gate.bossName : gate.monsterName,
       enemies: this.makeEnemies(gate, entry, trashCount, modifier),
       over: false, result: null, locked: false, guardRounds: 0,
-      playerHit: false, skillPanelOpen: false,
+      playerHit: false, skillPanelOpen: false, itemPanelOpen: false,
       vfxPlayer: null, guardRing: false, lunge: null, flash: false,
       floatPlayer: null, playerGlow: false, shadowLunge: false
     };
@@ -306,9 +305,11 @@ export class Game {
     }, 1500);
   }
 
-  /** Adds XP, rolling over levels (each grants stat points + a full
-   *  heal - a welcome mid-run second wind). Returns whether a level-up
-   *  happened. */
+  /** Adds XP, rolling over levels (each grants max HP/MP headroom + stat
+   *  points). Deliberately does *not* top off current HP/MP - leveling up
+   *  mid-fight is a milestone, not a free heal, so a level-up in a rough
+   *  battle still leaves you in that rough battle. Returns whether a
+   *  level-up happened. */
   private grantXp(amount: number): boolean {
     const player = { ...this.state.player };
     player.xp += amount;
@@ -316,9 +317,9 @@ export class Game {
     while (player.xp >= player.xpToNext) {
       player.xp -= player.xpToNext;
       player.level += 1;
-      player.xpToNext = Math.round(player.xpToNext * 1.25);
+      // 1.18 (was 1.25) - a gentler curve, so leveling stays frequent deep into a run.
+      player.xpToNext = Math.round(player.xpToNext * 1.18);
       player.maxHp += 15; player.maxMp += 5;
-      player.hp = player.maxHp; player.mp = player.maxMp;
       player.statPoints += 3;
       leveled = true;
     }
@@ -455,9 +456,12 @@ export class Game {
       if (wasGuardingRound) dmg = Math.round(dmg * (isSpecial ? 0.75 : 0.4));
 
       attacker.lunging = true;
-      next.vfxPlayer = isSpecial ? "flurry" : "slash";
+      // "smash" is its own vfx (a red shockwave ring, not the flurry slashes
+      // a player crit uses) - a special reads as a distinct kind of threat,
+      // not just "the same hit, but harder".
+      next.vfxPlayer = isSpecial ? "smash" : "slash";
       next.lunge = null;
-      this.emitFx({ kind: isSpecial ? "flurry" : "slash", side: "player" });
+      this.emitFx({ kind: isSpecial ? "smash" : "slash", side: "player" });
       this.emitFx({ kind: "shake", intensity: isSpecial ? "heavy" : "light" });
       if (isSpecial) this.showBattleToast(next, { text: `${next.enemyName} unleashes a fierce strike!`, kind: "info" });
 
@@ -497,6 +501,13 @@ export class Game {
     step(0);
   }
 
+  /** While the player is guarding, their footing is worse - the basic
+   *  Attack can whiff outright. AGI/PER (the same stats that drive crit)
+   *  cut the chance down, so a nimble build barely notices it. */
+  private selfGuardMissChance(): number {
+    return Math.max(0.05, 0.32 - this.effectiveStat("agi") * 0.01 - this.effectiveStat("per") * 0.006);
+  }
+
   battleAttack() {
     const src = this.state.battle;
     if (!src || src.over || src.locked) return;
@@ -504,6 +515,18 @@ export class Game {
     const target = this.currentTarget(battle);
     if (!target) return;
     battle.locked = true;
+
+    if (battle.guardRounds > 0 && Math.random() < this.selfGuardMissChance()) {
+      this.playPlayerVfx(battle, { lunge: "player" });
+      this.triggerUnitFloat(target, "Miss", "miss");
+      this.companionStrike(battle);
+      this.state.battle = battle;
+      this.notify();
+      if (battle.enemies.every((u) => !u.alive)) this.onWaveCleared(battle);
+      else setTimeout(() => this.enemyTurn(this.state.battle!), 650);
+      return;
+    }
+
     const isCrit = this.rollCrit();
     let dmg = Math.max(1, Math.round(6 + this.effectiveStat("str") * 1.1 - target.def + (Math.random() * 4 - 2)));
     if (isCrit) dmg = Math.round(dmg * 1.8);
@@ -566,7 +589,14 @@ export class Game {
   toggleSkillPanel() {
     const b = this.state.battle;
     if (!b || b.over || b.locked) return;
-    this.state.battle = { ...b, skillPanelOpen: !b.skillPanelOpen };
+    this.state.battle = { ...b, skillPanelOpen: !b.skillPanelOpen, itemPanelOpen: false };
+    this.notify();
+  }
+
+  toggleItemPanel() {
+    const b = this.state.battle;
+    if (!b || b.over || b.locked) return;
+    this.state.battle = { ...b, itemPanelOpen: !b.itemPanelOpen, skillPanelOpen: false };
     this.notify();
   }
 
@@ -583,19 +613,26 @@ export class Game {
     setTimeout(() => this.enemyTurn(this.state.battle!), 650);
   }
 
-  battleItem() {
+  /** Uses one of the tiered HP/MP consumables from the Items panel. */
+  useItem(potionId: string) {
     const src = this.state.battle;
-    if (!src || src.over || src.locked || this.state.inventory.potions <= 0) return;
+    if (!src || src.over || src.locked) return;
+    const count = this.state.inventory.potions[potionId] ?? 0;
+    if (count <= 0) return;
+    const def = POTIONS.find((p) => p.id === potionId);
+    if (!def) return;
+
     const battle = this.cloneBattle(src);
     battle.locked = true;
-    battle.skillPanelOpen = false;
+    battle.itemPanelOpen = false;
     const player = { ...this.state.player };
-    player.hp = Math.min(player.maxHp, player.hp + 35);
-    const inventory = { ...this.state.inventory, potions: this.state.inventory.potions - 1 };
-    this.triggerFloatPlayer(battle, "+35", "heal");
+    if (def.kind === "hp") player.hp = Math.min(player.maxHp, player.hp + def.amount);
+    else player.mp = Math.min(player.maxMp, player.mp + def.amount);
+    const potions = { ...this.state.inventory.potions, [potionId]: count - 1 };
+    this.triggerFloatPlayer(battle, `+${def.amount}`, "heal");
     this.state.battle = battle;
     this.state.player = player;
-    this.state.inventory = inventory;
+    this.state.inventory = { potions };
     this.notify();
     setTimeout(() => this.enemyTurn(this.state.battle!), 650);
   }
@@ -688,15 +725,13 @@ export class Game {
     this.notify();
   }
 
-  buyPotion() {
-    if (this.state.player.gold < POTION_COST) return;
-    this.state.player = { ...this.state.player, gold: this.state.player.gold - POTION_COST };
-    this.state.inventory = { ...this.state.inventory, potions: this.state.inventory.potions + 1 };
+  buyPotion(potionId: string) {
+    const def = POTIONS.find((p) => p.id === potionId);
+    if (!def || this.state.player.gold < def.cost) return;
+    this.state.player = { ...this.state.player, gold: this.state.player.gold - def.cost };
+    const potions = { ...this.state.inventory.potions, [potionId]: (this.state.inventory.potions[potionId] ?? 0) + 1 };
+    this.state.inventory = { potions };
     this.notify();
-  }
-
-  get potionCost(): number {
-    return POTION_COST;
   }
 
   get gates(): GateDef[] {

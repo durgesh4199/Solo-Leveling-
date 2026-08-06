@@ -1,4 +1,4 @@
-import type { GateDef, GateModifier, ItemRarity, ItemSlot, LootItem, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
+import type { GateDef, GateModifier, ItemRarity, ItemSlot, LootItem, PotionDef, Rank, SkillDef, StatKey, WavePlanEntry } from "./types";
 
 /** Ported from the Hunter Protocol design file; extended with a boss name
  *  per gate for the multi-wave encounter system (see buildWavePlan /
@@ -61,7 +61,8 @@ export function statsForUnit(gate: GateDef, globalIndex: number, trashCount: num
     hp: Math.round(gate.baseHp * scale * 0.5),
     atk: Math.max(1, Math.round(gate.baseAtk * scale * 0.2)),
     def: Math.round(gate.baseDef * scale),
-    xp: Math.round(gate.xp * 0.22 * scale)
+    // 0.3 (was 0.22) - levels come noticeably faster across a run.
+    xp: Math.round(gate.xp * 0.3 * scale)
   };
 }
 
@@ -70,7 +71,8 @@ export function statsForBoss(gate: GateDef) {
     hp: Math.round(gate.baseHp * 2.6),
     atk: Math.round(gate.baseAtk * 1.5),
     def: Math.round(gate.baseDef * 1.4) + 1,
-    xp: Math.round(gate.xp * 1.6)
+    // 2.0 (was 1.6) - the boss kill is a real level-up moment.
+    xp: Math.round(gate.xp * 2.0)
   };
 }
 
@@ -214,3 +216,15 @@ export const SKILLS: SkillDef[] = [
 export function unlockedSkills(level: number): SkillDef[] {
   return SKILLS.filter((s) => s.unlockLevel <= level);
 }
+
+/** Three tiers apiece of HP/MP consumables - a cheap early option and a
+ *  real late-game one, bought in the Inventory shop and used mid-battle
+ *  from the Items panel. */
+export const POTIONS: PotionDef[] = [
+  { id: "hp_minor", name: "Minor HP Potion", kind: "hp", tier: "minor", amount: 30, cost: 25, icon: "flask" },
+  { id: "hp_greater", name: "Greater HP Potion", kind: "hp", tier: "greater", amount: 70, cost: 55, icon: "flask" },
+  { id: "hp_supreme", name: "Supreme HP Potion", kind: "hp", tier: "supreme", amount: 150, cost: 110, icon: "flask" },
+  { id: "mp_minor", name: "Minor MP Potion", kind: "mp", tier: "minor", amount: 15, cost: 25, icon: "moon-stars" },
+  { id: "mp_greater", name: "Greater MP Potion", kind: "mp", tier: "greater", amount: 35, cost: 55, icon: "moon-stars" },
+  { id: "mp_supreme", name: "Supreme MP Potion", kind: "mp", tier: "supreme", amount: 70, cost: 110, icon: "moon-stars" }
+];
