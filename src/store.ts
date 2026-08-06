@@ -1,5 +1,13 @@
 import { ARCHETYPE_BY_RANK, GATES_DATA, POTIONS, STAT_TUNING, SHADOW_RANK_POWER, SKILLS, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
-import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
+import type { BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, StatKey, VfxKind, WavePlanEntry } from "./types";
+import { evaluateCondition } from "./systems/progress/conditions";
+import type { ProgressContext } from "./systems/progress/types";
+import { COUNTER_KEYS } from "./systems/progress/types";
+import { TITLES } from "./systems/titles/data";
+import type { TitleDef } from "./systems/titles/types";
+import { ACHIEVEMENTS } from "./systems/achievements/data";
+import { clearSave, loadSave, writeSave } from "./systems/save";
+import type { SavedGameState } from "./systems/save/types";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -34,7 +42,9 @@ const INITIAL_STATE: GameState = {
   inventory: { potions: { hp_minor: 3, mp_minor: 1 } },
   bag: [],
   shop: { stock: [], rerollCost: 60, lastRerollAt: 0 },
-  battle: null
+  battle: null,
+  progress: { counters: {}, unlockedTitleIds: [], equippedTitleId: null, unlockedAchievementIds: [] },
+  globalToast: null
 };
 
 /**
@@ -61,15 +71,29 @@ export class Game {
   private floatSeq = 0;
   private unitSeq = 0;
   private toastSeq = 0;
+  private globalToastSeq = 0;
+  /** A save loaded from disk at boot, held here (not yet applied to
+   *  `state`) until the player picks Continue on the Title screen - so a
+   *  returning player still sees the same "choose to continue" moment a
+   *  fresh one does, rather than being silently dropped back into an old
+   *  run. Cleared (one way or the other) the moment that choice is made. */
+  private pendingSave: SavedGameState | null = null;
+  private saveDirty = false;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
+    this.pendingSave = loadSave();
     // First stock is free - a fresh Hunter shouldn't open the Shop to
-    // nothing for sale.
+    // nothing for sale. (Continuing from a save replaces this with the
+    // save's own stock in continueSave().)
     this.rerollShop(true);
     // Checked periodically rather than with a single long-lived timer tied
     // to one specific restock, so it stays correct even across however
     // many manual (paid) rerolls happen in between.
     setInterval(() => this.checkShopAutoRestock(), 15000);
+    // Best-effort final save on tab close, on top of the regular debounced
+    // autosave - catches whatever happened in the last <3s window.
+    window.addEventListener("beforeunload", () => this.persistNow());
   }
 
   subscribe(fn: Listener): () => void {
@@ -83,7 +107,12 @@ export class Game {
   }
 
   private notify() {
+    // Runs synchronously before listeners so a just-unlocked Title/
+    // Achievement (and its toast) is visible in the very same render pass
+    // that triggered it, not one frame later.
+    this.refreshProgress();
     for (const fn of this.listeners) fn();
+    this.scheduleAutosave();
   }
 
   private emitFx(e: FxEvent) {
@@ -100,8 +129,12 @@ export class Game {
     this.notify();
   }
 
-  /** Base stat + whatever's equipped anywhere rolled a matching affix.
-   *  Public - the battle UI reads this too, for the combat-details readout. */
+  /** Base stat + whatever's equipped anywhere rolled a matching affix,
+   *  then the equipped Title's percentage bonus (if any) on top - same
+   *  ordering as a real "gear, then multiplier" pipeline, so a Title never
+   *  feels weaker just because a stat point/affix already boosted the
+   *  base. Public - the battle UI reads this too, for the combat-details
+   *  readout. */
   effectiveStat(key: StatKey): number {
     const p = this.state.player;
     let value = p[key];
@@ -110,6 +143,11 @@ export class Game {
       for (const affix of item.affixes) {
         if (affix.key === key) value += affix.value;
       }
+    }
+    const title = this.equippedTitle();
+    if (title) {
+      if (title.bonus.kind === "statPct" && title.bonus.stat === key) value *= 1 + title.bonus.value;
+      else if (title.bonus.kind === "allStatsPct") value *= 1 + title.bonus.value;
     }
     return value;
   }
@@ -156,7 +194,9 @@ export class Game {
   /** 0..1 chance any given Attack/Skill hit crits. */
   get critChance(): number {
     const equipmentCrit = this.equipmentAffixSum("crit") / 100;
-    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit);
+    const title = this.equippedTitle();
+    const titleCrit = title?.bonus.kind === "critFlat" ? title.bonus.value : 0;
+    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit);
   }
 
   private rollCrit(): boolean {
@@ -182,6 +222,190 @@ export class Game {
       this.critChance * 100 * 12 +
       shadowPower * 10
     );
+  }
+
+  // ---- save / load (src/systems/save/) ----
+
+  /** True once a save has been loaded from disk at boot and not yet
+   *  consumed by continueSave()/startNewHunter() - drives the Title
+   *  screen's Continue/New Hunter choice. */
+  hasSave(): boolean {
+    return this.pendingSave !== null;
+  }
+
+  /** Read-only peek at the not-yet-applied save (name/level/rank for the
+   *  Title screen's Continue preview) without touching live state -
+   *  `continueSave()` is still the only thing that actually loads it. */
+  peekSave(): SavedGameState | null {
+    return this.pendingSave;
+  }
+
+  /** Applies the save loaded at boot and drops straight into Gates - a
+   *  save never resumes mid-battle (see SavedGameState's comment), so
+   *  Gates is always the right landing spot for "pick up where you left
+   *  off". */
+  continueSave() {
+    if (!this.pendingSave) return;
+    const saved = this.pendingSave;
+    this.pendingSave = null;
+    this.state = {
+      ...this.state,
+      player: saved.player,
+      gatesCleared: saved.gatesCleared,
+      shadowArmy: saved.shadowArmy,
+      inventory: saved.inventory,
+      bag: saved.bag,
+      shop: saved.shop,
+      progress: saved.progress ?? structuredClone(INITIAL_STATE.progress),
+      screen: "gates",
+      battle: null
+    };
+    this.notify();
+  }
+
+  /** Wipes any save on disk and starts completely fresh - the Title
+   *  screen gates this behind a confirmation since it's destructive. */
+  startNewHunter() {
+    clearSave();
+    this.pendingSave = null;
+    this.state = structuredClone(INITIAL_STATE);
+    this.rerollShop(true);
+    this.state.screen = "gates";
+    this.notify();
+  }
+
+  private persistNow() {
+    writeSave({
+      player: this.state.player,
+      gatesCleared: this.state.gatesCleared,
+      shadowArmy: this.state.shadowArmy,
+      inventory: this.state.inventory,
+      bag: this.state.bag,
+      shop: this.state.shop,
+      progress: this.state.progress
+    });
+  }
+
+  /** Coalesces however many notify()s happen in a burst (e.g. a flurry of
+   *  battle animation ticks) into at most one localStorage write every 3s,
+   *  so autosave can't itself cause jank during fast-paced combat. */
+  private scheduleAutosave() {
+    this.saveDirty = true;
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.saveDirty) {
+        this.saveDirty = false;
+        this.persistNow();
+      }
+    }, 3000);
+  }
+
+  // ---- meta-progression: counters, Titles, Achievements (src/systems/progress|titles|achievements/) ----
+
+  private incrementCounter(key: string, amount = 1) {
+    const counters = { ...this.state.progress.counters };
+    counters[key] = (counters[key] ?? 0) + amount;
+    this.state.progress = { ...this.state.progress, counters };
+  }
+
+  private progressContext(): ProgressContext {
+    const p = this.state.player;
+    return {
+      counters: this.state.progress.counters,
+      level: p.level,
+      rank: rankForLevel(p.level),
+      shadowCount: this.state.shadowArmy.length,
+      gatesClearedCount: Object.values(this.state.gatesCleared).filter(Boolean).length,
+      gold: p.gold
+    };
+  }
+
+  /** Public - the Progress screen (Titles/Achievements sub-tabs) uses this
+   *  to render "342 / 1,000" progress text on locked entries. */
+  getProgressContext(): ProgressContext {
+    return this.progressContext();
+  }
+
+  private equippedTitle(): TitleDef | null {
+    const id = this.state.progress.equippedTitleId;
+    if (!id) return null;
+    return TITLES.find((t) => t.id === id) ?? null;
+  }
+
+  /** Equip one Title at a time (null clears it) - only an already-unlocked
+   *  one can be equipped. Its bonus feeds effectiveStat/critChance/
+   *  grantXp/grantKillRewards directly, no separate "apply" step. */
+  equipTitle(id: string | null) {
+    if (id !== null && !this.state.progress.unlockedTitleIds.includes(id)) return;
+    this.state.progress = { ...this.state.progress, equippedTitleId: id };
+    this.notify();
+  }
+
+  private showGlobalToast(text: string, kind: GlobalToast["kind"]) {
+    this.globalToastSeq += 1;
+    const id = this.globalToastSeq;
+    this.state.globalToast = { id, text, kind };
+    setTimeout(() => {
+      if (this.state.globalToast?.id === id) {
+        this.state.globalToast = null;
+        this.notify();
+      }
+    }, 2600);
+  }
+
+  /** Runs on every notify() - cheap (a few dozen condition checks against
+   *  a small context object) for a turn-based game with human-timescale
+   *  interactions, so it isn't worth dirty-tracking which counter changed.
+   *  A newly-met Title/Achievement unlocks immediately and floats a global
+   *  toast; an Achievement's reward is granted the same instant, no
+   *  separate "claim" step. If several unlock in the exact same pass
+   *  (e.g. right after loading an old save into a fresh build with more
+   *  content than it shipped with) only the last toast of the burst is
+   *  visible - all of them still land correctly in the unlocked-id lists,
+   *  the Progress screen is the source of truth, the toast is just a
+   *  bonus nudge. */
+  private refreshProgress() {
+    const ctx = this.progressContext();
+
+    const unlockedTitles = new Set(this.state.progress.unlockedTitleIds);
+    let titlesChanged = false;
+    for (const t of TITLES) {
+      if (!unlockedTitles.has(t.id) && evaluateCondition(t.condition, ctx)) {
+        unlockedTitles.add(t.id);
+        titlesChanged = true;
+        this.showGlobalToast(`Title Unlocked: ${t.name}`, "title");
+      }
+    }
+
+    const unlockedAch = new Set(this.state.progress.unlockedAchievementIds);
+    let achChanged = false;
+    let goldGain = 0;
+    let statPointGain = 0;
+    for (const a of ACHIEVEMENTS) {
+      if (!unlockedAch.has(a.id) && evaluateCondition(a.condition, ctx)) {
+        unlockedAch.add(a.id);
+        achChanged = true;
+        if (a.reward.kind === "gold") goldGain += a.reward.amount;
+        else statPointGain += a.reward.amount;
+        this.showGlobalToast(`Achievement Unlocked: ${a.name}`, "achievement");
+      }
+    }
+
+    if (titlesChanged || achChanged) {
+      this.state.progress = {
+        ...this.state.progress,
+        unlockedTitleIds: Array.from(unlockedTitles),
+        unlockedAchievementIds: Array.from(unlockedAch)
+      };
+    }
+    if (goldGain > 0 || statPointGain > 0) {
+      this.state.player = {
+        ...this.state.player,
+        gold: this.state.player.gold + goldGain,
+        statPoints: this.state.player.statPoints + statPointGain
+      };
+    }
   }
 
   // ---- wave/enemy construction ----
@@ -395,6 +619,8 @@ export class Game {
    *  battle still leaves you in that rough battle. Returns whether a
    *  level-up happened. */
   private grantXp(amount: number): boolean {
+    const title = this.equippedTitle();
+    if (title?.bonus.kind === "xpPct") amount = Math.round(amount * (1 + title.bonus.value));
     const player = { ...this.state.player };
     player.xp += amount;
     let leveled = false;
@@ -415,7 +641,11 @@ export class Game {
    *  gate modifiers all push the odds and rarity up. */
   private grantKillRewards(battle: BattleState, unit: EnemyUnit) {
     if (unit.gold > 0) {
-      this.state.player = { ...this.state.player, gold: this.state.player.gold + unit.gold };
+      const title = this.equippedTitle();
+      const goldMult = title?.bonus.kind === "goldPct" ? 1 + title.bonus.value : 1;
+      const gold = Math.round(unit.gold * goldMult);
+      this.state.player = { ...this.state.player, gold: this.state.player.gold + gold };
+      this.incrementCounter(COUNTER_KEYS.goldEarnedTotal, gold);
     }
 
     const modifier = battle.modifier;
@@ -444,8 +674,12 @@ export class Game {
     unit.hp = Math.max(0, unit.hp - dmg);
     unit.hit = true;
     this.triggerUnitFloat(unit, `-${dmg}`, isCrit ? "crit" : "dmg");
+    if (isCrit) this.incrementCounter(COUNTER_KEYS.critsLandedTotal);
     if (unit.hp <= 0 && unit.alive) {
       unit.alive = false;
+      this.incrementCounter(COUNTER_KEYS.killsTotal);
+      this.incrementCounter(COUNTER_KEYS.killsByArchetype(ARCHETYPE_BY_RANK[battle.rank]));
+      if (battle.isBossWave) this.incrementCounter(COUNTER_KEYS.bossesDefeatedTotal);
       const leveled = this.grantXp(Math.round(unit.xp * (battle.modifier?.xpMult ?? 1)));
       if (leveled) this.emitFx({ kind: "levelup" });
       this.emitFx({ kind: "dissolve", side: "enemy", targetUid: unit.uid });
@@ -718,6 +952,7 @@ export class Game {
     this.state.battle = battle;
     this.state.player = player;
     this.state.inventory = { potions };
+    this.incrementCounter(COUNTER_KEYS.potionsUsedTotal);
     this.notify();
     setTimeout(() => this.enemyTurn(this.state.battle!), 650);
   }
@@ -804,6 +1039,7 @@ export class Game {
     this.state.player = player;
     this.state.bag = bag;
     this.clampVitals();
+    this.incrementCounter(COUNTER_KEYS.itemsEquippedTotal);
     this.notify();
   }
 

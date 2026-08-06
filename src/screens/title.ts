@@ -20,8 +20,26 @@ function motesHtml(count: number): string {
 }
 
 export const titleScreen = simpleScreen((game: Game) => {
-  const p = game.state.player;
+  // A save loaded at boot hasn't been applied to game.state yet (see
+  // Game.continueSave) - preview *its* name/level/rank here rather than
+  // the fresh default player, so "Continue" doesn't lie about who you're
+  // continuing as. Power score needs live equipment/title bonuses this
+  // peek doesn't have, so it's only shown for a true fresh start.
+  const saved = game.peekSave();
+  const hasSave = saved !== null;
+  const p = hasSave ? saved!.player : game.state.player;
   const rank = rankForLevel(p.level);
+
+  const summaryLine = hasSave
+    ? `<div style="font-size:12px;color:var(--color-accent-300);margin-top:2px;">Continue to resume this Hunter</div>`
+    : `<div style="font-size:12px;color:var(--color-accent-300);margin-top:2px;">${icon("lightning")} Power ${game.powerScore.toLocaleString()}</div>`;
+
+  const actions = hasSave
+    ? `
+      <button class="btn btn-primary btn-block" style="justify-content:center;padding:var(--space-3);" data-action="continue-save">${icon("door-open")} Continue</button>
+      <button class="btn btn-secondary action-btn" style="justify-content:center;padding:var(--space-2);font-size:12px;" data-action="new-hunter">Start a New Hunter</button>`
+    : `<button class="btn btn-primary btn-block" style="justify-content:center;padding:var(--space-3);" data-action="begin-game">${icon("door-open")} Enter the System</button>`;
+
   return `
     <div style="flex:1;display:flex;flex-direction:column;justify-content:space-between;padding:var(--space-8);position:relative;overflow:hidden;
       background:radial-gradient(120% 90% at 20% 0%, var(--color-section-glow) 0%, var(--color-bg) 55%);">
@@ -44,14 +62,20 @@ export const titleScreen = simpleScreen((game: Game) => {
           <div>
             <div style="font-size:20px;font-weight:500;">${p.name}</div>
             <div style="font-size:13px;color:var(--color-neutral-400);">${rank}-Rank Hunter · Level ${p.level}</div>
-            <div style="font-size:12px;color:var(--color-accent-300);margin-top:2px;">${icon("lightning")} Power ${game.powerScore.toLocaleString()}</div>
+            ${summaryLine}
           </div>
-          <div class="tag tag-accent">Awakened</div>
+          <div class="tag tag-accent">${hasSave ? "Welcome Back" : "Awakened"}</div>
         </div>
-        <button class="btn btn-primary btn-block" style="justify-content:center;padding:var(--space-3);" data-action="begin-game">${icon("door-open")} Enter the System</button>
+        <div style="display:flex;flex-direction:column;gap:var(--space-2);">${actions}</div>
       </div>
     </div>
   `;
 }, (root, game) => {
   root.querySelector('[data-action="begin-game"]')?.addEventListener("click", () => game.beginGame());
+  root.querySelector('[data-action="continue-save"]')?.addEventListener("click", () => game.continueSave());
+  root.querySelector('[data-action="new-hunter"]')?.addEventListener("click", () => {
+    if (window.confirm("Start a New Hunter? This permanently deletes your current save.")) {
+      game.startNewHunter();
+    }
+  });
 });

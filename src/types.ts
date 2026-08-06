@@ -206,6 +206,29 @@ export interface BattleState {
   toastId?: number;
 }
 
+/** Meta-progression: lifetime counters (kills, gold earned, ...) that
+ *  outlive any single run, plus which Titles/Achievements they've unlocked
+ *  so far. See src/systems/progress/, src/systems/titles/,
+ *  src/systems/achievements/ - this slice is intentionally just data
+ *  (counter values + unlocked-id lists); the definitions/condition logic
+ *  live in those system folders, not here. */
+export interface ProgressState {
+  counters: Record<string, number>;
+  unlockedTitleIds: string[];
+  equippedTitleId: string | null;
+  unlockedAchievementIds: string[];
+}
+
+/** A brief, app-wide notification (achievement/title unlock, etc.) that
+ *  isn't tied to being inside a battle - battle already has its own toast
+ *  on BattleState for in-run messages. Rendered by the app shell
+ *  (screens/index.ts) so it's visible no matter which screen is open. */
+export interface GlobalToast {
+  id: number;
+  text: string;
+  kind: "achievement" | "title" | "info";
+}
+
 export interface GameState {
   screen: Screen;
   player: PlayerState;
@@ -220,4 +243,6 @@ export interface GameState {
    *  vending machine. `lastRerollAt` is a Date.now() timestamp. */
   shop: { stock: LootItem[]; rerollCost: number; lastRerollAt: number };
   battle: BattleState | null;
+  progress: ProgressState;
+  globalToast?: GlobalToast | null;
 }

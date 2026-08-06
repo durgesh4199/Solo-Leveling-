@@ -9,8 +9,16 @@ exists, how it's built, and why certain things are shaped the way they are
 A Solo Leveling-inspired, turn-based hunter RPG. Clear ranked Gates in
 sequential monster gauntlets, level up, spend stat points, loot/buy/equip
 gear, and **Arise** the monsters you defeat as permanent Shadow allies.
-Single-player, browser-based, no backend, no persistence yet (see
-Limitations).
+Single-player, browser-based, no backend. Progress **does** persist now
+(versioned localStorage save, see "Meta-progression" below) - this is a
+recent addition, don't assume the game still resets every reload.
+
+This project is mid-way through a long-term content expansion (Shadow
+Evolution, Talent Trees, Hunter Classes, Crafting, Relics, Dungeon
+Modifiers, Random Events, Promotion Exams, an Infinite Tower, Prestige,
+and more) tracked in **`EXPANSION_ROADMAP.md`** - read that alongside this
+file if you're continuing that work. Phase 1 of it (Save, Titles,
+Achievements) is already built; everything after is still backlog.
 
 Repo: `durgesh4199/Solo-Leveling-`, working branch
 `claude/hunter-protocol-game-b1i5ur`. Also published as a single-file HTML
@@ -45,12 +53,19 @@ src/
     shaders.ts                GLSL sources (streak, radial, particles)
     ShaderFX.ts                Public effect API: slash, flurry, smash, guardRing, dissolve, arisePortal, levelUpBurst
   screens/
-    index.ts                App shell: screen switching + bottom tab bar
+    index.ts                App shell: screen switching + bottom tab bar + the global toast overlay
     title.ts / gates.ts / battle.ts / stats.ts / shadows.ts / inventory.ts
+  systems/                 New-system home (see EXPANSION_ROADMAP.md's architecture note) - one folder per system
+    progress/                Shared by titles/achievements: ConditionDef + evaluateCondition + counter key constants
+    titles/                   TITLES data + TitleBonus/TitleDef types
+    achievements/              ACHIEVEMENTS data + AchievementReward/AchievementDef types
+    save/                       SavedGameState/SaveFile types + loadSave/writeSave/clearSave
+  services/
+    storage.ts               The only file that touches `localStorage` directly
   styles/
     tokens.css               Design tokens (colors, spacing, radii) - "Nocturne" dark-violet theme
     base.css                   Buttons, cards, tags, bars, tabs, form controls
-    effects.css                 Every CSS keyframe/VFX class
+    effects.css                 Every CSS keyframe/VFX class (incl. .global-toast)
 ```
 
 `screens/*.ts` each export a `ScreenModule = (root, game) => ScreenController`.
@@ -123,12 +138,19 @@ blood-red (float numbers, impact glow, screen flash); non-damage effects
 (guard, Arise, level-up) stay violet. No text combat log — feedback is
 purely visual/animated.
 
-**Stats** — Power Score card (see below) at top, then HP/MP/XP bars, then
-one row per core stat with a `+` button. Hovering previews exactly what
-the point buys (`gainText()`); clicking floats the same text as a
-confirmation. STR→Attack damage, AGI/PER→crit chance + guard-miss
-reduction, VIT/INT→**immediate** max (and current) HP/MP (not gated behind
-a future level-up).
+**Stats** — 3 sub-tabs (`stats.ts` follows the same sub-tab shell pattern
+as Inventory now, via a small `mountSubTab()` wrapper - the original
+Status body moved into `mountStatusBody()` unchanged, still a persistent-
+DOM/targeted-update controller, not a full rebuild, so its stat-point
+gain-toast animation timers stay valid):
+- **Status** (was the whole screen before Phase 1) — Power Score card at
+  top, then HP/MP/XP bars, then one row per core stat with a `+` button.
+  Hovering previews exactly what the point buys (`gainText()`); clicking
+  floats the same text as a confirmation. STR→Attack damage, AGI/PER→crit
+  chance + guard-miss reduction, VIT/INT→**immediate** max (and current)
+  HP/MP (not gated behind a future level-up).
+- **Titles** — see "Meta-progression" below.
+- **Achievements** — see "Meta-progression" below.
 
 **Shadows** — grid of every Shadow ever Arisen (offered after *every* wave
 clear, trash or boss, not just bosses). Rank + species filter dropdowns.
@@ -176,6 +198,57 @@ critChance*100*12 + (sum of every Shadow's power in the whole army, not
 just deployed)*10. Pure display/vanity number, not consulted by any combat
 formula. Shown on Title (inline) and Status (dedicated glowing card that
 pulses gold whenever it increases).
+
+## Meta-progression: Save, Titles, Achievements (Phase 1 of EXPANSION_ROADMAP.md)
+
+- **Save** (`src/systems/save/`, `src/services/storage.ts`) — persists
+  `player, gatesCleared, shadowArmy, inventory, bag, shop, progress`
+  (never `screen` or `battle` - a save always lands on Gates, never
+  mid-fight) to a versioned localStorage blob. `Game` loads it at
+  construct time into a private `pendingSave` field *without* applying it
+  - the Title screen previews it (`game.peekSave()`) and the player
+  explicitly chooses `continueSave()` or `startNewHunter()` (native
+  `window.confirm()` - deliberate, it's the one destructive action in the
+  game and a native dialog is the simplest honest way to gate it).
+  Autosave is debounced (`scheduleAutosave()`, one write per 3s at most)
+  from inside `notify()`, plus a `beforeunload` flush. **Bump
+  `CURRENT_SCHEMA_VERSION` in `systems/save/types.ts` and add a migration
+  branch in `loadSave()` whenever `SavedGameState`'s shape changes in a
+  way an old save can't just be read as-is** - don't skip this, it's the
+  only thing standing between a future refactor and silently wiping every
+  player's save.
+- **Progress counters** (`src/systems/progress/`) — `GameState.progress.
+  counters: Record<string, number>`, incremented at the handful of store.ts
+  call sites that represent a real lifetime milestone (kills - in
+  `applyDamage`, by total and by archetype; crits landed; bosses defeated;
+  gold earned; items equipped; potions used). `COUNTER_KEYS` in
+  `progress/types.ts` is the single source of truth for the key strings -
+  never hardcode one elsewhere. `ConditionDef`/`evaluateCondition` are the
+  shared declarative-condition language both Titles and Achievements
+  check against (`ProgressContext`, built fresh each check by
+  `Game.getProgressContext()` from counters + live player/shadowArmy/
+  gatesCleared state - not itself persisted, since it's cheap to
+  recompute from what already is).
+- **Titles** (`src/systems/titles/`) — `TITLES: TitleDef[]`, one equipped
+  at a time (`Game.equipTitle`), its `TitleBonus` folds directly into
+  `effectiveStat` (statPct/allStatsPct, applied *after* equipment affixes
+  - same multiplicative-on-top-of-gear semantics), `critChance`
+  (critFlat), `grantXp` (xpPct), and `grantKillRewards`'s gold payout
+  (goldPct). 12-entry starter roster.
+- **Achievements** (`src/systems/achievements/`) — `ACHIEVEMENTS:
+  AchievementDef[]`, reward (gold or stat points) granted the instant the
+  condition is met, no separate claim step. 28-entry starter roster - the
+  architecture supports growing toward "hundreds" (per the brief) as pure
+  content, no code changes needed.
+- **Unlock evaluation** — `Game.refreshProgress()` runs on *every*
+  `notify()` (cheap: ~40 condition checks against a small context object,
+  fine for a turn-based game). A newly-met Title/Achievement floats a
+  `GlobalToast` (`Game.showGlobalToast`, rendered by `screens/index.ts`'s
+  app shell so it's visible on any screen, not just Battle - Battle
+  already had its own in-run `BattleToast`, this is the app-wide
+  equivalent). If several unlock in the same pass only the last toast of
+  the burst is visible; all of them still land correctly in the
+  unlocked-id lists regardless - known, accepted limitation, not a bug.
 
 ## Player aura (visual, not mechanical)
 
@@ -225,14 +298,28 @@ Arise, level-up, dissolve).
   Any new battle-screen state needs a targeted DOM patch, or it'll cut off
   whatever CSS animation is mid-flight.
 - **No text combat log, ever.** All feedback is animation/color/float-text.
+- **New systems get their own `src/systems/<name>/` folder** (types.ts +
+  data.ts + logic), not more code stuffed into store.ts/data.ts — see the
+  architecture note at the top of `EXPANSION_ROADMAP.md` for why the
+  existing core files weren't relocated wholesale when this pattern was
+  introduced.
+- **Bump `CURRENT_SCHEMA_VERSION` and migrate** (`systems/save/types.ts` /
+  `loadSave()`) any time a persisted shape changes - see "Meta-progression"
+  above. Skipping this silently breaks every existing player's save.
 
-## Known limitations / roadmap (from README)
+## Known limitations / roadmap
 
-- **No persistence** — a full session lives in memory only; no
-  localStorage save/load yet.
 - Procedural SVG portraits stand in for real artwork.
 - Sound design not started.
 - Shadow Army has no rename/upgrade yet (deploy/recall only).
+- The full long-term content roadmap (Shadow Evolution, Talent Trees,
+  Hunter Classes, Crafting, Relics, Dungeon Modifiers, Random Events,
+  Promotion Exams, Infinite Tower, Daily/Weekly missions, Prestige, combat
+  status effects, enemy tiers, visual polish) is tracked, phased, in
+  **`EXPANSION_ROADMAP.md`** - Phase 1 (Save/Titles/Achievements) is done;
+  everything from Phase 2 on is still backlog. Check it before starting
+  any "expand the game" work so you don't duplicate or contradict the
+  sequencing/architecture decisions already made there.
 
 ## Workflow notes for whoever picks this up next
 

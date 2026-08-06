@@ -1,8 +1,13 @@
 import type { Game } from "../store";
-import type { ScreenModule } from "./types";
+import type { ScreenController, ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { rankForLevel, STAT_DEFS, STAT_TUNING } from "../data";
 import type { StatKey } from "../types";
+import { TITLES } from "../systems/titles/data";
+import { ACHIEVEMENTS } from "../systems/achievements/data";
+import { evaluateCondition, conditionProgressText } from "../systems/progress/conditions";
+
+type SubTab = "status" | "titles" | "achievements";
 
 /** What a single point in this stat actually buys, in concrete numbers -
  *  previewed on hover (before you commit) and floated as a confirmation
@@ -18,13 +23,13 @@ function gainText(stat: StatKey): string {
   }
 }
 
-export const statsScreen: ScreenModule = (root, game) => {
-  root.innerHTML = `
+/** The original Status body, unchanged - a persistent-DOM, targeted-update
+ *  controller (not a full rebuild per update()) so the stat-point gain
+ *  toast's own animation timers stay valid across renders. Nested inside
+ *  a sub-tab body element rather than the screen's own root. */
+function mountStatusBody(body: HTMLElement, game: Game): ScreenController {
+  body.innerHTML = `
     <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
-      <div>
-        <h4 style="margin-bottom:var(--space-1);">Status Window</h4>
-        <div id="stats-sub" style="font-size:13px;color:var(--color-neutral-400);"></div>
-      </div>
       <div class="card power-card" style="padding:var(--space-4);flex-direction:row;align-items:center;gap:var(--space-3);border:1px solid var(--color-accent-700);box-shadow:0 0 22px 1px color-mix(in srgb, var(--color-accent) 22%, transparent);">
         <span style="font-size:26px;color:var(--color-accent-300);flex-shrink:0;">${icon("lightning")}</span>
         <div style="flex:1;min-width:0;">
@@ -54,7 +59,7 @@ export const statsScreen: ScreenModule = (root, game) => {
     </div>
   `;
 
-  const rowsContainer = root.querySelector<HTMLElement>("#stat-rows")!;
+  const rowsContainer = body.querySelector<HTMLElement>("#stat-rows")!;
   rowsContainer.innerHTML = STAT_DEFS.map((d) => `
     <div class="stat-row" style="position:relative;display:flex;align-items:center;justify-content:space-between;padding:var(--space-2) var(--space-3);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);">
       <div class="stat-gain-toast" style="display:none;position:absolute;right:var(--space-3);top:0;font-size:11px;font-weight:600;color:var(--color-accent-300);white-space:nowrap;pointer-events:none;text-shadow:0 2px 8px rgba(0,0,0,0.7);"></div>
@@ -107,23 +112,20 @@ export const statsScreen: ScreenModule = (root, game) => {
   let lastPower: number | null = null;
 
   const els = {
-    sub: root.querySelector<HTMLElement>("#stats-sub")!,
-    powerScore: root.querySelector<HTMLElement>("#power-score")!,
-    hpText: root.querySelector<HTMLElement>("#stat-hp-text")!,
-    hpFill: root.querySelector<HTMLElement>("#stat-hp-fill")!,
-    mpText: root.querySelector<HTMLElement>("#stat-mp-text")!,
-    mpFill: root.querySelector<HTMLElement>("#stat-mp-fill")!,
-    xpText: root.querySelector<HTMLElement>("#stat-xp-text")!,
-    xpFill: root.querySelector<HTMLElement>("#stat-xp-fill")!,
-    points: root.querySelector<HTMLElement>("#stat-points")!
+    powerScore: body.querySelector<HTMLElement>("#power-score")!,
+    hpText: body.querySelector<HTMLElement>("#stat-hp-text")!,
+    hpFill: body.querySelector<HTMLElement>("#stat-hp-fill")!,
+    mpText: body.querySelector<HTMLElement>("#stat-mp-text")!,
+    mpFill: body.querySelector<HTMLElement>("#stat-mp-fill")!,
+    xpText: body.querySelector<HTMLElement>("#stat-xp-text")!,
+    xpFill: body.querySelector<HTMLElement>("#stat-xp-fill")!,
+    points: body.querySelector<HTMLElement>("#stat-points")!
   };
 
   const update = () => {
     const p = game.state.player;
-    const rank = rankForLevel(p.level);
     const maxHp = game.effectiveMaxHp();
     const maxMp = game.effectiveMaxMp();
-    els.sub.textContent = `${p.name} · ${rank}-Rank · Level ${p.level}`;
 
     const power = game.powerScore;
     els.powerScore.textContent = power.toLocaleString();
@@ -143,13 +145,132 @@ export const statsScreen: ScreenModule = (root, game) => {
     els.points.textContent = `${p.statPoints} available`;
 
     for (const d of STAT_DEFS) {
-      const valEl = root.querySelector<HTMLElement>(`#stat-val-${d.key}`);
+      const valEl = body.querySelector<HTMLElement>(`#stat-val-${d.key}`);
       if (valEl) valEl.textContent = String(p[d.key]);
-      const btn = root.querySelector<HTMLButtonElement>(`[data-action="add-stat"][data-stat="${d.key}"]`);
+      const btn = body.querySelector<HTMLButtonElement>(`[data-action="add-stat"][data-stat="${d.key}"]`);
       if (btn) btn.disabled = p.statPoints <= 0;
     }
   };
 
   update();
   return { update };
+}
+
+/** Titles and Achievements don't change while their sub-tab is open (the
+ *  player can't be mid-battle and browsing a menu at the same time), so
+ *  unlike Status they're a one-shot render with no update() of their own -
+ *  switching away and back re-renders fresh, which is all they need. */
+function renderTitles(body: HTMLElement, game: Game): void {
+  const ctx = game.getProgressContext();
+  const unlocked = new Set(game.state.progress.unlockedTitleIds);
+  const equippedId = game.state.progress.equippedTitleId;
+
+  const rows = TITLES.map((t) => {
+    const isUnlocked = unlocked.has(t.id);
+    const isEquipped = equippedId === t.id;
+    const met = isUnlocked || evaluateCondition(t.condition, ctx);
+    const action = isUnlocked
+      ? `<button class="btn ${isEquipped ? "btn-primary" : "btn-secondary"} action-btn" style="flex-shrink:0;padding:6px 12px;font-size:11px;" data-action="${isEquipped ? "unequip-title" : "equip-title"}" data-title="${t.id}">${isEquipped ? "Equipped" : "Equip"}</button>`
+      : `<span class="tag tag-outline" style="flex-shrink:0;font-size:10px;">${icon("shield")} Locked</span>`;
+    return `
+      <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid ${isEquipped ? "var(--color-accent-600)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);${isUnlocked ? "" : "opacity:0.65;"}">
+        <span style="font-size:18px;color:${isUnlocked ? "var(--color-accent-300)" : "var(--color-neutral-600)"};flex-shrink:0;">${icon(met ? "sparkles" : "shield")}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;">${t.name}</div>
+          <div style="font-size:11px;color:var(--color-neutral-500);">${isUnlocked ? t.description : conditionProgressText(t.condition, ctx)}</div>
+          <div style="font-size:11px;color:var(--color-accent-300);margin-top:2px;">${t.bonusText}</div>
+        </div>
+        ${action}
+      </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
+      <div style="font-size:12px;color:var(--color-neutral-500);">${unlocked.size} / ${TITLES.length} unlocked · one equipped at a time, its bonus applies everywhere</div>
+      ${rows}
+    </div>
+  `;
+
+  body.querySelectorAll<HTMLElement>('[data-action="equip-title"]').forEach((el) => {
+    el.addEventListener("click", () => { game.equipTitle(el.dataset.title!); renderTitles(body, game); });
+  });
+  body.querySelectorAll<HTMLElement>('[data-action="unequip-title"]').forEach((el) => {
+    el.addEventListener("click", () => { game.equipTitle(null); renderTitles(body, game); });
+  });
+}
+
+function renderAchievements(body: HTMLElement, game: Game): void {
+  const ctx = game.getProgressContext();
+  const unlocked = new Set(game.state.progress.unlockedAchievementIds);
+
+  const rows = ACHIEVEMENTS.map((a) => {
+    const isUnlocked = unlocked.has(a.id);
+    return `
+      <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid ${isUnlocked ? "var(--color-accent-600)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);${isUnlocked ? "" : "opacity:0.65;"}">
+        <span style="font-size:18px;color:${isUnlocked ? "#f5c451" : "var(--color-neutral-600)"};flex-shrink:0;">${icon(isUnlocked ? "check-circle" : "shield")}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:13px;font-weight:500;">${a.name}</div>
+          <div style="font-size:11px;color:var(--color-neutral-500);">${a.description}</div>
+          <div style="font-size:11px;color:var(--color-neutral-400);margin-top:2px;">${isUnlocked ? "Complete" : conditionProgressText(a.condition, ctx)}</div>
+        </div>
+        <span class="tag tag-outline" style="flex-shrink:0;font-size:10px;">${a.rewardText}</span>
+      </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
+      <div style="font-size:12px;color:var(--color-neutral-500);">${unlocked.size} / ${ACHIEVEMENTS.length} completed · rewards grant automatically the instant a condition is met</div>
+      ${rows}
+    </div>
+  `;
+}
+
+export const statsScreen: ScreenModule = (root, game) => {
+  let subTab: SubTab = "status";
+  let statusController: ScreenController | null = null;
+
+  const subTabBtn = (tab: SubTab, label: string, iconName: string) => `
+    <button class="btn ${subTab === tab ? "btn-primary" : "btn-secondary"} action-btn" data-substat="${tab}"
+      style="flex:1;justify-content:center;padding:var(--space-2);font-size:12px;">${icon(iconName as any)} ${label}</button>`;
+
+  const mountSubTab = () => {
+    statusController?.unmount?.();
+    statusController = null;
+
+    const p = game.state.player;
+    const rank = rankForLevel(p.level);
+    root.innerHTML = `
+      <div style="padding:var(--space-6) var(--space-6) 0;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-1);">
+          <h4 style="margin:0;">Status Window</h4>
+        </div>
+        <div style="font-size:13px;color:var(--color-neutral-400);margin-bottom:var(--space-4);">${p.name} · ${rank}-Rank · Level ${p.level}</div>
+        <div style="display:flex;gap:6px;">
+          ${subTabBtn("status", "Status", "chart-bar")}
+          ${subTabBtn("titles", "Titles", "sparkles")}
+          ${subTabBtn("achievements", "Achievements", "check-circle")}
+        </div>
+      </div>
+      <div id="stats-subtab-body" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>
+    `;
+
+    root.querySelectorAll<HTMLElement>("[data-substat]").forEach((el) => {
+      el.addEventListener("click", () => { subTab = el.dataset.substat as SubTab; mountSubTab(); });
+    });
+
+    const body = root.querySelector<HTMLElement>("#stats-subtab-body")!;
+    if (subTab === "status") statusController = mountStatusBody(body, game);
+    else if (subTab === "titles") renderTitles(body, game);
+    else renderAchievements(body, game);
+  };
+
+  mountSubTab();
+  return {
+    update() {
+      if (subTab === "status") statusController?.update();
+    },
+    unmount() {
+      statusController?.unmount?.();
+    }
+  };
 };

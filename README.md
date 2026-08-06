@@ -103,12 +103,27 @@ engine, no external art/font dependencies — built to run on:
   Items panel next to Skills). The bag has no free discard - selling
   (a tenth of an item's Shop price) is the only way an unwanted piece
   leaves it, and asks for a tap-to-confirm first so nothing sells by accident
-- **Status** — hovering a stat's `+` previews exactly what that point would
-  buy ("+5 Max HP", "+0.3% Crit · -1% Guard Miss", ...) before you commit
-  to it, then floats the same confirmation off the row once you do
-- Progress autosaves are **not yet wired up** (see Roadmap) — this MVP
-  plays a full session in memory; add `src/systems/save.ts`-style
-  persistence when you're ready to ship
+- **Status** — three sub-tabs. **Status** (unchanged): hovering a stat's
+  `+` previews exactly what that point would buy ("+5 Max HP", "+0.3% Crit
+  · -1% Guard Miss", ...) before you commit to it, then floats the same
+  confirmation off the row once you do. **Titles**: milestone-gated
+  passive bonuses (kill counts per monster family, Shadow collection size,
+  Gates cleared, boss kills, rank reached) - locked ones show live
+  progress toward them, one can be equipped at a time. **Achievements**: a
+  starter roster of 28 spanning every progression axis in the game, each
+  granting gold or stat points the instant it's met, no separate claim
+  step
+- **Progress persists** — autosaves (debounced, at most once every 3s,
+  plus a final flush on tab close) to a versioned localStorage save. The
+  Title screen offers **Continue** (with a preview of who you're
+  continuing as) or **Start a New Hunter** (confirmed, since it deletes
+  the save) whenever one exists; an in-progress battle is deliberately
+  never resumed mid-fight - Continue always lands you back at Gate
+  selection
+
+Unlocking a Title or Achievement anywhere in the app (not just in Battle)
+floats a brief global toast so growth stays visible no matter which screen
+you're on.
 
 ## Visual effects
 
@@ -238,8 +253,15 @@ download the results from the workflow run's **Artifacts** section:
 
 ## Roadmap
 
-- Persist progress (localStorage save/load) between sessions
+- ~~Persist progress (localStorage save/load) between sessions~~ — done
+  (`src/systems/save/`)
 - Real portrait artwork in place of the procedural SVG silhouettes
-- More Gates, multi-enemy encounters, additional skills
 - Shadow Army management (rename, deploy in battle, upgrade)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
+
+Long-term content roadmap (Equipment Sets, Talent Trees, Hunter Classes,
+Crafting, Relics, Dungeon Modifiers, Random Events, Shadow Evolution,
+Promotion Exams, an Infinite Tower, Daily/Weekly missions, Prestige, combat
+status effects, and more) lives in **`EXPANSION_ROADMAP.md`**, phased so
+each stays a real, working system rather than a stub — Titles and
+Achievements above are Phase 1 of that plan.

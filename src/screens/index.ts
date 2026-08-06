@@ -27,7 +27,8 @@ const TABS: { screen: Screen; label: string; iconName: Parameters<typeof icon>[0
 
 export function mountApp(appRoot: HTMLElement, game: Game) {
   appRoot.innerHTML = `
-    <div class="app-frame">
+    <div class="app-frame" style="position:relative;">
+      <div id="global-toast" class="global-toast" style="display:none;"></div>
       <div id="screen-slot" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>
       <div id="tab-bar" style="display:none;border-top:1px solid var(--color-neutral-800);background:var(--color-surface);"></div>
     </div>
@@ -35,6 +36,8 @@ export function mountApp(appRoot: HTMLElement, game: Game) {
 
   const screenSlot = appRoot.querySelector<HTMLElement>("#screen-slot")!;
   const tabBar = appRoot.querySelector<HTMLElement>("#tab-bar")!;
+  const globalToastEl = appRoot.querySelector<HTMLElement>("#global-toast")!;
+  let renderedToastId = 0;
 
   tabBar.innerHTML = TABS.map((t) => `
     <button class="tab-btn" data-tab="${t.screen}">
@@ -62,6 +65,18 @@ export function mountApp(appRoot: HTMLElement, game: Game) {
       });
     } else {
       controller?.update();
+    }
+
+    // App-wide notification (Title/Achievement unlocks, ...) - lives here
+    // rather than any one screen so it's visible no matter what's open.
+    const toast = game.state.globalToast;
+    if (toast && toast.id !== renderedToastId) {
+      renderedToastId = toast.id;
+      globalToastEl.textContent = toast.text;
+      globalToastEl.className = `global-toast show ${toast.kind}`;
+      globalToastEl.style.display = "block";
+    } else if (!toast) {
+      globalToastEl.style.display = "none";
     }
   };
 
