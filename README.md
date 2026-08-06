@@ -54,15 +54,21 @@ engine, no external art/font dependencies — built to run on:
   gentle 1.18x per level, and each level grants +15 max HP, +5 max MP, and
   3 stat points to spend on STR/AGI/INT/VIT/PER - it does **not** top off
   current HP/MP, so leveling mid-fight is a milestone, not a free heal
+- **Stats** — every stat now does something concrete: STR raises Attack
+  damage, AGI/PER raise crit chance and cut down the guard-miss chance,
+  VIT grants immediate max (and current) HP, INT grants immediate max (and
+  current) MP. Spending a point floats a confirmation of exactly what it
+  bought ("+5 Max HP", "+0.3% Crit · -1% Guard Miss", ...) right off the
+  Status screen row you spent it on
 - **Shadow Army** — **every** wave clear (trash or boss) offers **Arise** on
   a short interstitial before continuing, adding that wave's monster as a
   permanent Shadow ranked to your current Hunter rank - not just the boss
-- **Consumables** — three tiers apiece of HP and MP potions (Minor/Greater/
-  Supreme), bought in the Inventory shop and used mid-battle from the Items
-  panel next to Skills
-- **Inventory** — starting gear (Dagger of the Depths, Reinforced Leather,
-  Band of Focus); the loot bag has slot and rarity filter chips to make
-  picking gear out of a big haul fast
+- **Inventory** — three sub-tabs, each its own menu: **Gear** (a paperdoll
+  equipment grid - Weapon/Ring/Amulet/Armor arranged around the Hunter,
+  connected by pathway lines, plus the loot bag with slot/rarity filter
+  chips), **Shop** (spend gold on procedurally-rolled equipable gear,
+  reroll the stock for a fee), and **Potions** (the tiered HP/MP
+  consumables, used mid-battle from the Items panel next to Skills)
 - Progress autosaves are **not yet wired up** (see Roadmap) — this MVP
   plays a full session in memory; add `src/systems/save.ts`-style
   persistence when you're ready to ship
