@@ -63,6 +63,11 @@ engine, no external art/font dependencies — built to run on:
 - **Shadow Army** — **every** wave clear (trash or boss) offers **Arise** on
   a short interstitial before continuing, adding that wave's monster as a
   permanent Shadow ranked to your current Hunter rank - not just the boss
+- **Power** — one combined "how strong am I" number, shown on the Title
+  screen and prominently on Status: level, every effective stat (gear
+  folds in automatically), effective max HP/MP, crit chance, and the
+  combined power of your *whole* Shadow Army all feed into it, and it
+  pulses gold on Status whenever it goes up
 - **Equipment** — 6 slots (Weapon, Helmet, Body Armor, Legs, Ring, Amulet),
   each item rolling 1-4 random affixes depending on rarity: the five core
   stats (folds into effectiveStat, same as a stat point) *and* direct,

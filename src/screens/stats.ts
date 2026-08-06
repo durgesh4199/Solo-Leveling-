@@ -25,6 +25,13 @@ export const statsScreen: ScreenModule = (root, game) => {
         <h4 style="margin-bottom:var(--space-1);">Status Window</h4>
         <div id="stats-sub" style="font-size:13px;color:var(--color-neutral-400);"></div>
       </div>
+      <div class="card power-card" style="padding:var(--space-4);flex-direction:row;align-items:center;gap:var(--space-3);border:1px solid var(--color-accent-700);box-shadow:0 0 22px 1px color-mix(in srgb, var(--color-accent) 22%, transparent);">
+        <span style="font-size:26px;color:var(--color-accent-300);flex-shrink:0;">${icon("lightning")}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--color-neutral-500);">Power</div>
+          <div id="power-score" style="font-size:26px;font-weight:600;font-family:var(--font-heading);color:var(--color-accent-200);font-variant-numeric:tabular-nums;"></div>
+        </div>
+      </div>
       <div class="card" style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-3);">
         <div>
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--color-neutral-400);margin-bottom:4px;"><span>HP</span><span id="stat-hp-text"></span></div>
@@ -97,8 +104,11 @@ export const statsScreen: ScreenModule = (root, game) => {
     });
   });
 
+  let lastPower: number | null = null;
+
   const els = {
     sub: root.querySelector<HTMLElement>("#stats-sub")!,
+    powerScore: root.querySelector<HTMLElement>("#power-score")!,
     hpText: root.querySelector<HTMLElement>("#stat-hp-text")!,
     hpFill: root.querySelector<HTMLElement>("#stat-hp-fill")!,
     mpText: root.querySelector<HTMLElement>("#stat-mp-text")!,
@@ -114,6 +124,16 @@ export const statsScreen: ScreenModule = (root, game) => {
     const maxHp = game.effectiveMaxHp();
     const maxMp = game.effectiveMaxMp();
     els.sub.textContent = `${p.name} · ${rank}-Rank · Level ${p.level}`;
+
+    const power = game.powerScore;
+    els.powerScore.textContent = power.toLocaleString();
+    if (lastPower !== null && power > lastPower) {
+      els.powerScore.classList.remove("power-up");
+      void els.powerScore.offsetWidth;
+      els.powerScore.classList.add("power-up");
+    }
+    lastPower = power;
+
     els.hpText.textContent = `${p.hp} / ${maxHp}`;
     els.hpFill.style.width = `${Math.round((p.hp / maxHp) * 100)}%`;
     els.mpText.textContent = `${p.mp} / ${maxMp}`;

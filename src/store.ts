@@ -163,6 +163,27 @@ export class Game {
     return Math.random() < this.critChance;
   }
 
+  /** A single "how strong am I" number - level, every effective core stat
+   *  (so gear folds in automatically), effective max HP/MP, crit chance,
+   *  and the combined power of every Shadow you've arisen (not just the
+   *  deployed one - your whole army counts). Purely a vanity/progress
+   *  readout, not consulted by any combat formula, so the weights below
+   *  are a display tuning knob, not a balance one. */
+  get powerScore(): number {
+    const p = this.state.player;
+    const statSum = (["str", "agi", "int", "vit", "per"] as StatKey[])
+      .reduce((sum, key) => sum + this.effectiveStat(key), 0);
+    const shadowPower = this.state.shadowArmy.reduce((sum, s) => sum + s.power, 0);
+    return Math.round(
+      p.level * 15 +
+      statSum * 8 +
+      this.effectiveMaxHp() * 2 +
+      this.effectiveMaxMp() * 3 +
+      this.critChance * 100 * 12 +
+      shadowPower * 10
+    );
+  }
+
   // ---- wave/enemy construction ----
 
   private freshUnit(hp: number, atk: number, def: number, xp: number, gold: number, isElite: boolean): EnemyUnit {

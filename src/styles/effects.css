@@ -211,3 +211,13 @@
   position: relative; z-index: 1; border-radius: 50%; overflow: hidden;
   background: var(--color-surface); border: 1px solid var(--color-neutral-800);
 }
+
+/* Status screen — Power readout pulses gold whenever it goes up (level,
+   a new stat point, better gear, a fresh Shadow) so growth actually reads
+   as a moment, not just a number quietly changing underneath you. */
+.power-up { animation: powerUpPulse 0.7s ease; }
+@keyframes powerUpPulse {
+  0% { color: var(--color-accent-200); text-shadow: none; }
+  30% { color: #f5c451; text-shadow: 0 0 16px rgba(245, 196, 81, 0.7); transform: scale(1.08); }
+  100% { color: var(--color-accent-200); text-shadow: none; transform: scale(1); }
+}

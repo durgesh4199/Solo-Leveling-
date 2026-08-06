@@ -44,6 +44,7 @@ export const titleScreen = simpleScreen((game: Game) => {
           <div>
             <div style="font-size:20px;font-weight:500;">${p.name}</div>
             <div style="font-size:13px;color:var(--color-neutral-400);">${rank}-Rank Hunter · Level ${p.level}</div>
+            <div style="font-size:12px;color:var(--color-accent-300);margin-top:2px;">${icon("lightning")} Power ${game.powerScore.toLocaleString()}</div>
           </div>
           <div class="tag tag-accent">Awakened</div>
         </div>
