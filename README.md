@@ -117,7 +117,12 @@ the original design:
 
 1. **CSS keyframe layer** — screen shake, floating damage/heal numbers,
    HP-bar hit-flash, lunge, impact glow, guard-ring pulse — the exact
-   animations from the source design file.
+   animations from the source design file. The Hunter's own portrait also
+   carries a permanent **rank aura** (Title, Battle, and the Inventory
+   paperdoll) - a glow + counter-rotating rings in a color that climbs from
+   a muted E-rank violet to a radiant near-white S-rank one, gaining a
+   second ring at C-rank and orbiting embers at A-rank, so standing still
+   at S-rank actually looks like it
 2. **WebGL2 shader FX layer** (`src/fx/`) — hand-written GLSL, no engine
    dependency: glowing energy **slash trails**, a triple-hit **flurry** for
    Dagger Rush with an expanding flare ring, additive **spark particles**

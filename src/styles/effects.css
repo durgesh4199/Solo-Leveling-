@@ -167,18 +167,6 @@
   background: var(--color-accent-300); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--color-accent) 70%, transparent);
   animation: titleDrift linear infinite; pointer-events: none;
 }
-@keyframes titleRingSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes titleRingPulse { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.9; } }
-.title-ring {
-  position: absolute; inset: -14px; border-radius: 50%;
-  border: 1.5px dashed var(--color-accent-400);
-  animation: titleRingSpin 16s linear infinite, titleRingPulse 3.2s ease-in-out infinite;
-  pointer-events: none;
-}
-.title-ring::before {
-  content: ""; position: absolute; inset: 8px; border-radius: 50%;
-  border: 1px solid color-mix(in srgb, var(--color-accent-300) 50%, transparent);
-}
 @keyframes titleReveal {
   0% { opacity: 0; transform: translateY(10px); }
   100% { opacity: 1; transform: translateY(0); }
@@ -188,6 +176,50 @@
 .title-glow { animation: titleGlow 3.4s ease-in-out infinite; }
 @keyframes titleBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 .title-cursor { display: inline-block; width: 6px; height: 11px; margin-left: 3px; background: var(--color-accent-300); animation: titleBlink 1s step-end infinite; vertical-align: -1px; }
+
+/* Player aura — a rank-colored glow + counter-rotating rings wrapped
+   around the Hunter's own portrait (title screen, battle arena, paperdoll)
+   via playerAuraHtml(). Sits as the first child of a position:relative,
+   sized portrait wrapper so DOM order alone puts it behind the portrait
+   art - no z-index juggling against the vfx/glow layers stacked on top of
+   it in battle. Three tiers (E/D, C/B, A/S) add more rings/embers as rank
+   climbs, so a late-game Hunter visibly radiates power standing still. */
+.player-aura { position: absolute; inset: -22%; pointer-events: none; }
+.player-aura-glow {
+  position: absolute; inset: -8%; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--aura) 55%, transparent) 0%, transparent 68%);
+  animation: auraPulse 2.6s ease-in-out infinite;
+}
+.player-aura-ring {
+  position: absolute; inset: 6%; border-radius: 50%;
+  border: 1.5px dashed color-mix(in srgb, var(--aura) 85%, transparent);
+  box-shadow: 0 0 16px 1px color-mix(in srgb, var(--aura) 45%, transparent);
+  animation: auraRingSpin 10s linear infinite;
+}
+.player-aura-ring-2 {
+  inset: 15%; border-style: solid; border-width: 1px;
+  border-color: color-mix(in srgb, var(--aura) 55%, transparent);
+  box-shadow: none;
+  animation: auraRingSpin 7s linear infinite reverse;
+}
+.player-aura.tier-1 .player-aura-glow { opacity: 0.5; }
+.player-aura.tier-2 .player-aura-glow { opacity: 0.72; }
+.player-aura.tier-3 .player-aura-glow { opacity: 1; animation-duration: 1.9s; }
+.player-aura.tier-3 .player-aura-ring { animation-duration: 7s; }
+@keyframes auraPulse { 0%, 100% { transform: scale(0.94); opacity: 0.5; } 50% { transform: scale(1.08); opacity: 0.9; } }
+@keyframes auraRingSpin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.player-aura-ember {
+  position: absolute; left: 50%; top: 50%; width: 3px; height: 3px; border-radius: 50%;
+  background: var(--aura); box-shadow: 0 0 6px 2px color-mix(in srgb, var(--aura) 70%, transparent);
+  opacity: 0;
+  animation: auraEmberRise linear infinite;
+}
+@keyframes auraEmberRise {
+  0% { opacity: 0; transform: rotate(var(--angle)) translateY(-38%) scale(0.6); }
+  20% { opacity: 0.9; }
+  100% { opacity: 0; transform: rotate(var(--angle)) translateY(-92%) scale(1.1); }
+}
 
 /* Inventory — equipment paperdoll grid (see the reference layout): a small
    grid of slot tiles around the Hunter portrait, connected by thin pathway

@@ -17,6 +17,21 @@ const RANK_GLOW: Record<Rank, string> = {
   S: "#d2cefd"
 };
 
+/** The Hunter's own glow, separate from the monster ranks above - stays in
+ *  the violet "chosen one" family at every rank (never the flat monster
+ *  grey) and climbs from a muted E-rank tint to a radiant near-white S-rank
+ *  one, so the player reads as visibly more powerful, not just differently
+ *  labeled, by the time they're S-rank. Drives both the portrait's own SVG
+ *  glow and the aura around it (see playerAuraHtml). */
+export const PLAYER_RANK_GLOW: Record<Rank, string> = {
+  E: "#8b7fd1",
+  D: "#9c8fe0",
+  C: "#a99bec",
+  B: "#b5abfc",
+  A: "#c9c0ff",
+  S: "#f2eeff"
+};
+
 let uidSeq = 0;
 
 function frame(uid: string, glow: string, silhouette: string, extras = ""): string {
@@ -46,10 +61,12 @@ function eyes(uid: string, cx1: number, cx2: number, cy: number, r = 5.5): strin
     <circle cx="${cx2}" cy="${cy}" r="${r * 0.28}" fill="#fff"/>`;
 }
 
-/** The player's hunter portrait: hooded cloak, twin violet eyes, dagger at hip. */
-export function hunterPortrait(): string {
+/** The player's hunter portrait: hooded cloak, twin violet eyes, dagger at
+ *  hip - glows brighter through the violet family as the Hunter's rank
+ *  climbs (see PLAYER_RANK_GLOW), rather than a fixed color. */
+export function hunterPortrait(rank: Rank = "E"): string {
   const uid = `hunter-${uidSeq++}`;
-  const glow = "#b5abfc";
+  const glow = PLAYER_RANK_GLOW[rank];
   const silhouette = `
     <path d="M50 20c-13 0-21 10-21 22 0 8 3 13 6 17-9 5-16 13-16 24v7h62v-7c0-11-7-19-16-24 3-4 6-9 6-17 0-12-8-22-21-22Z"/>
     <path d="M50 20c-13 0-21 10-21 22 0 5 1.2 9 3 12.5C36 46 40 33 50 30c10 3 14 16 18 24.5 1.8-3.5 3-7.5 3-12.5 0-12-8-22-21-22Z" fill="#171826" stroke-opacity="0.4"/>
@@ -63,6 +80,37 @@ export function hunterPortrait(): string {
     </g>
   `;
   return frame(uid, glow, silhouette, extras);
+}
+
+export const AURA_TIER: Record<Rank, 1 | 2 | 3> = { E: 1, D: 1, C: 2, B: 2, A: 3, S: 3 };
+
+function auraEmberHtml(count: number): string {
+  let out = "";
+  for (let i = 0; i < count; i++) {
+    const angle = Math.round((360 / count) * i + Math.random() * 24);
+    const delay = (Math.random() * 3).toFixed(1);
+    const duration = (2.2 + Math.random() * 1.6).toFixed(1);
+    out += `<span class="player-aura-ember" style="--angle:${angle}deg;animation-delay:${delay}s;animation-duration:${duration}s;"></span>`;
+  }
+  return out;
+}
+
+/** A rank-colored glow + counter-rotating rings wrapped around the
+ *  Hunter's own portrait - a genuinely "you got stronger" visual, not just
+ *  a recolor: E/D get a single soft pulse, C/B add a second ring, A/S add
+ *  orbiting embers on top of both. Meant to sit as the *first* child inside
+ *  a `position:relative`, sized portrait wrapper so it renders behind the
+ *  portrait art via DOM order (no z-index needed). */
+export function playerAuraHtml(rank: Rank): string {
+  const glow = PLAYER_RANK_GLOW[rank];
+  const tier = AURA_TIER[rank];
+  const embers = tier >= 3 ? auraEmberHtml(7) : "";
+  return `<div class="player-aura tier-${tier}" style="--aura:${glow};">
+    <div class="player-aura-glow"></div>
+    <div class="player-aura-ring"></div>
+    ${tier >= 2 ? `<div class="player-aura-ring player-aura-ring-2"></div>` : ""}
+    ${embers}
+  </div>`;
 }
 
 /** Goblin archetype — small, hunched, pointed ears. */

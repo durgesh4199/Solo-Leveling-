@@ -1,7 +1,7 @@
 import type { Game } from "../store";
 import { simpleScreen } from "./types";
 import { icon } from "../art/icons";
-import { hunterPortrait } from "../art/portraits";
+import { hunterPortrait, playerAuraHtml } from "../art/portraits";
 import { rankForLevel } from "../data";
 
 /** A field of slow-drifting motes behind the title content - pure CSS,
@@ -29,8 +29,8 @@ export const titleScreen = simpleScreen((game: Game) => {
 
       <div style="position:relative;">
         <div style="position:relative;width:104px;height:104px;margin-bottom:var(--space-6);">
-          <div class="title-ring"></div>
-          <div style="width:100%;height:100%;border-radius:50%;overflow:hidden;position:relative;z-index:1;">${hunterPortrait()}</div>
+          ${playerAuraHtml(rank)}
+          <div style="width:100%;height:100%;border-radius:50%;overflow:hidden;position:relative;z-index:1;">${hunterPortrait(rank)}</div>
         </div>
         <div class="title-reveal" style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--color-accent-300);margin-bottom:var(--space-3);animation-delay:0.05s;">
           System Notice<span class="title-cursor"></span>

@@ -1,9 +1,9 @@
 import type { Game } from "../store";
 import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
-import { enemyPortrait, hunterPortrait, shadowPortrait } from "../art/portraits";
+import { AURA_TIER, PLAYER_RANK_GLOW, enemyPortrait, hunterPortrait, playerAuraHtml, shadowPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
-import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS } from "../data";
+import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS, rankForLevel } from "../data";
 import type { EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
@@ -79,8 +79,9 @@ export const battleScreen: ScreenModule = (root, game) => {
 
           <div id="player-row" style="display:flex;align-items:flex-end;justify-content:center;gap:var(--space-3);">
             <div id="player-portrait" class="arena-portrait">
+              ${playerAuraHtml(rankForLevel(game.state.player.level))}
               <div id="player-glow" class="impact-glow"></div>
-              <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait()}</div>
+              <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait(rankForLevel(game.state.player.level))}</div>
               <div id="player-vfx" class="vfx-layer" style="display:none;">
                 <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
                 <div class="power-ring"></div>
@@ -315,11 +316,27 @@ export const battleScreen: ScreenModule = (root, game) => {
 
   let renderedWaveKey = "";
   let renderedShadowId = "";
+  let renderedPlayerRank = "";
 
   const update = () => {
     const b = game.state.battle;
     const p = game.state.player;
     if (!b) return;
+
+    // The portrait's own art is only drawn once at mount (regenerating its
+    // SVG mid-battle would risk cutting off whatever's animating on it
+    // right now) - but a rank-up crossing a rank boundary mid-fight is real,
+    // so the aura wrapped around it still tracks rank live, cheaply (just a
+    // CSS var + class, no DOM rebuild).
+    const rank = rankForLevel(p.level);
+    if (rank !== renderedPlayerRank) {
+      renderedPlayerRank = rank;
+      const aura = playerPortrait.querySelector<HTMLElement>(".player-aura");
+      if (aura) {
+        aura.style.setProperty("--aura", PLAYER_RANK_GLOW[rank]);
+        aura.className = `player-aura tier-${AURA_TIER[rank]}`;
+      }
+    }
 
     gateNameEl.textContent = b.gateName;
     if (b.modifier && b.modifier.key !== "none") {
