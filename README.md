@@ -29,31 +29,40 @@ engine, no external art/font dependencies — built to run on:
   potions are the only relief
 - **Battle** — turn-based, auto-targeting the frontmost living enemy
   (underlined): **Attack**, **Skills** (see below), **Guard** (blocks for a
-  random 1-3 rounds, halving incoming damage each round it's up), **Potion**
-  (+35 HP). Enemies sit above, the player (and a deployed Shadow) below, so
-  attacks read as motion up/down between them rather than side-to-side.
-  All alive enemies in a wave attack each round, so a full group is real
-  pressure - and they're not just dumb damage dealers: each one rolls
-  between a normal attack, **blocking** (reduces the next hit it takes),
-  and a **special strike** (~1.7x damage, telegraphed with a toast and a
+  random 1-3 rounds, halving incoming damage each round it's up - but
+  footing is worse while guarding, so Attack itself can whiff; AGI/PER cut
+  that miss chance down), **Items** (see Consumables below). Enemies sit
+  above, the player (and a deployed Shadow) below, so attacks read as
+  motion up/down between them rather than side-to-side. All alive enemies
+  in a wave attack each round, so a full group is real pressure - and
+  they're not just dumb damage dealers: each one rolls between a normal
+  attack, **blocking** (reduces the next hit it takes), and a **special
+  strike** (~1.7x damage, its own blood-red shockwave-ring vfx distinct
+  from a normal hit or a player crit, telegraphed with a toast and a
   heavier shake) - low-HP enemies turtle up more, and all of them lean into
-  specials the instant *you're* the one guarding. Feedback is purely visual
-  (floating numbers, hit-flash, slash/flurry effects, block/special toasts)
-  - no text log
+  specials the instant *you're* the one guarding. Every landed hit - yours,
+  a Shadow's, or an enemy's - reads blood red (float numbers, impact glow,
+  screen flash); non-damage effects (guard, Arise, level-up) stay violet.
+  Feedback is purely visual - no text log
 - **Skills** — unlock progressively with level, opened via a picker panel
   (locked ones show their unlock level): **Dagger Rush** (Lv 1, heavy
   single hit), **Piercing Thrust** (Lv 5, hits the front 2 enemies),
   **Shadow Execute** (Lv 10, single-target - doubled against a wounded
   target), **Umbral Storm** (Lv 15, hits the entire wave)
-- **Leveling** — XP is granted per kill (trash enemies give a smaller cut,
-  the boss a bonus); the curve grows 1.25x per level, and each level grants
-  +15 max HP, +5 max MP, a full heal, and 3 stat points to spend on
-  STR/AGI/INT/VIT/PER
+- **Leveling** — XP is granted per kill and tuned to come at a good clip
+  (trash enemies give a smaller cut, the boss a big one); the curve grows a
+  gentle 1.18x per level, and each level grants +15 max HP, +5 max MP, and
+  3 stat points to spend on STR/AGI/INT/VIT/PER - it does **not** top off
+  current HP/MP, so leveling mid-fight is a milestone, not a free heal
 - **Shadow Army** — **every** wave clear (trash or boss) offers **Arise** on
   a short interstitial before continuing, adding that wave's monster as a
   permanent Shadow ranked to your current Hunter rank - not just the boss
+- **Consumables** — three tiers apiece of HP and MP potions (Minor/Greater/
+  Supreme), bought in the Inventory shop and used mid-battle from the Items
+  panel next to Skills
 - **Inventory** — starting gear (Dagger of the Depths, Reinforced Leather,
-  Band of Focus) plus healing potions
+  Band of Focus); the loot bag has slot and rarity filter chips to make
+  picking gear out of a big haul fast
 - Progress autosaves are **not yet wired up** (see Roadmap) — this MVP
   plays a full session in memory; add `src/systems/save.ts`-style
   persistence when you're ready to ship
