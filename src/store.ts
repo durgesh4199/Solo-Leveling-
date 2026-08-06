@@ -120,15 +120,20 @@ export class Game {
     return sum;
   }
 
-  /** Base max HP/MP (level + VIT/INT stat points) plus flat equipment
-   *  bonuses - public, the battle/status screens both display against this
+  /** Base max HP/MP (level + VIT/INT stat points) plus flat "hp"/"mp"
+   *  equipment affixes *and* whatever VIT/INT gear itself grants - a point
+   *  of VIT converts to HP the same way whether it came from a stat point
+   *  or a ring, so the two systems never feel inconsistent with each
+   *  other. Public - the battle/status screens display against this
    *  rather than the raw player.maxHp/maxMp. */
   effectiveMaxHp(): number {
-    return this.state.player.maxHp + this.equipmentAffixSum("hp");
+    const equipmentVit = this.effectiveStat("vit") - this.state.player.vit;
+    return this.state.player.maxHp + this.equipmentAffixSum("hp") + equipmentVit * STAT_TUNING.vitHpPerPoint;
   }
 
   effectiveMaxMp(): number {
-    return this.state.player.maxMp + this.equipmentAffixSum("mp");
+    const equipmentInt = this.effectiveStat("int") - this.state.player.int;
+    return this.state.player.maxMp + this.equipmentAffixSum("mp") + equipmentInt * STAT_TUNING.intMpPerPoint;
   }
 
   /** Current hp/mp can end up above a just-lowered effective max (e.g.

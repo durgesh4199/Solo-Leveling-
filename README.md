@@ -63,12 +63,22 @@ engine, no external art/font dependencies — built to run on:
 - **Shadow Army** — **every** wave clear (trash or boss) offers **Arise** on
   a short interstitial before continuing, adding that wave's monster as a
   permanent Shadow ranked to your current Hunter rank - not just the boss
+- **Equipment** — 6 slots (Weapon, Helmet, Body Armor, Legs, Ring, Amulet),
+  each item rolling 1-4 random affixes depending on rarity: the five core
+  stats (folds into effectiveStat, same as a stat point) *and* direct,
+  flat HP/MP/Crit bonuses ("+22 Max HP", "+3% Crit") that don't cost a
+  stat point at all - a VIT/INT affix converts to HP/MP at the exact same
+  rate a spent stat point does, so the two systems never feel inconsistent
+- **Rarity** — 7 tiers, common up to godly (common → uncommon → rare →
+  epic → legendary → mythic → godly), each both rarer and a bigger
+  multiplier on every affix it rolls than the last
 - **Inventory** — three sub-tabs, each its own menu: **Gear** (a paperdoll
-  equipment grid - Weapon/Ring/Amulet/Armor arranged around the Hunter,
-  connected by pathway lines, plus the loot bag with slot/rarity filter
-  chips), **Shop** (spend gold on procedurally-rolled equipable gear,
-  reroll the stock for a fee), and **Potions** (the tiered HP/MP
-  consumables, used mid-battle from the Items panel next to Skills)
+  equipment grid - Amulet/Helmet/Ring across the top, Weapon beside the
+  Hunter, Body Armor and Legs stacked below, connected by pathway lines,
+  plus the loot bag with slot/rarity filter chips), **Shop** (spend gold on
+  procedurally-rolled equipable gear, reroll the stock for a fee), and
+  **Potions** (the tiered HP/MP consumables, used mid-battle from the
+  Items panel next to Skills)
 - Progress autosaves are **not yet wired up** (see Roadmap) — this MVP
   plays a full session in memory; add `src/systems/save.ts`-style
   persistence when you're ready to ship
