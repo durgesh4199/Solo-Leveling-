@@ -103,6 +103,13 @@ export interface ShadowRecord {
    *  the derived Mood label (see shadowMood() in systems/shadows/). */
   loyalty: number;
   battlesFought: number;
+  /** How many times this Shadow has evolved (0 = its original Arise form).
+   *  Evolving advances `rank`/`archetype`/`power` to the next tier and
+   *  resets `level`/`xp` so growth keeps meaning something in the new,
+   *  stronger form - see Game.evolveShadow() in store.ts. `name`/`type`/
+   *  `loyalty`/`battlesFought` (the Shadow's identity and history) carry
+   *  over unchanged across an evolution. */
+  evolutionStage: number;
   deployed: boolean;
 }
 

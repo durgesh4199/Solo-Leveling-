@@ -2,7 +2,7 @@ import type { Game } from "../store";
 import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { shadowPortrait } from "../art/portraits";
-import { effectiveShadowPower, shadowMood, shadowXpToNext, SHADOW_MAX_LEVEL, SHADOW_SKILLS } from "../systems/shadows/data";
+import { effectiveShadowPower, shadowMood, shadowXpToNext, nextShadowRank, SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_SKILLS } from "../systems/shadows/data";
 import type { Rank, ShadowRecord } from "../types";
 
 const RANK_ORDER: Rank[] = ["E", "D", "C", "B", "A", "S"];
@@ -17,6 +17,9 @@ export const shadowsScreen: ScreenModule = (root, game) => {
   // Shadow id currently showing its "merge with your weakest duplicate?"
   // confirmation - merging consumes a Shadow permanently.
   let mergeConfirmId: string | null = null;
+  // Shadow id currently showing its "evolve into the next rank?"
+  // confirmation - costs gold and resets the Shadow's level to 1.
+  let evolveConfirmId: string | null = null;
 
   const selectOption = (value: string, label: string, selected: boolean) =>
     `<option value="${value}" ${selected ? "selected" : ""}>${label}</option>`;
@@ -85,6 +88,25 @@ export const shadowsScreen: ScreenModule = (root, game) => {
         ? `<button class="btn btn-secondary action-btn" style="justify-content:center;padding:6px;font-size:11px;" data-action="merge-shadow" data-id="${shadow.id}" title="Merge with your weakest ${shadow.type} duplicate">${icon("sparkles")} Merge Duplicate</button>`
         : "";
 
+      // Evolve only ever surfaces once a Shadow has earned it (maxed
+      // level) and has somewhere left to go (not already S-rank) - same
+      // "only show what's actionable" rule the Merge button follows.
+      const evolveRank = maxed ? nextShadowRank(shadow.rank) : null;
+      const evolveCost = evolveRank ? SHADOW_EVOLUTION_COST[shadow.rank] : undefined;
+      const canAffordEvolve = evolveCost !== undefined && game.state.player.gold >= evolveCost;
+      const evolving = evolveConfirmId === shadow.id;
+
+      const evolveAction = evolving && evolveRank
+        ? `
+          <div style="font-size:11px;color:var(--color-accent-300);text-align:center;">Evolve into a ${evolveRank}-Rank Shadow for ${evolveCost}g? Level resets to 1.</div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="cancel-evolve">Cancel</button>
+            <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="confirm-evolve" data-id="${shadow.id}" ${canAffordEvolve ? "" : "disabled"}>Confirm</button>
+          </div>`
+        : evolveRank
+        ? `<button class="btn btn-secondary action-btn" style="justify-content:center;padding:6px;font-size:11px;${canAffordEvolve ? "" : "opacity:0.55;"}" data-action="evolve-shadow" data-id="${shadow.id}" title="${canAffordEvolve ? `Evolve into a ${evolveRank}-Rank Shadow` : `Need ${evolveCost}g to evolve (have ${game.state.player.gold}g)`}">${icon("lightning")} Evolve to ${evolveRank}-Rank · ${evolveCost}g</button>`
+        : "";
+
       return `
       <div class="card elev-sm" style="padding:var(--space-3);display:flex;flex-direction:column;gap:var(--space-2); ${shadow.deployed ? "box-shadow:0 0 0 1.5px var(--color-accent-400);" : ""}">
         <div style="width:100%;height:80px;border-radius:8px;overflow:hidden;position:relative;" class="lighten">
@@ -93,7 +115,10 @@ export const shadowsScreen: ScreenModule = (root, game) => {
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <span style="font-size:16px;color:var(--color-accent-300);">${icon("skull")}</span>
-          <div class="tag tag-outline" style="font-size:10px;">${shadow.rank}</div>
+          <div style="display:flex;gap:4px;">
+            ${shadow.evolutionStage > 0 ? `<div class="tag tag-outline" style="font-size:10px;color:var(--color-accent-300);" title="Evolved ${shadow.evolutionStage}x">${icon("lightning")} ${shadow.evolutionStage}</div>` : ""}
+            <div class="tag tag-outline" style="font-size:10px;">${shadow.rank}</div>
+          </div>
         </div>
         <div style="font-size:14px;font-weight:500;">${shadow.name}</div>
         <div style="font-size:11px;color:var(--color-neutral-500);">${shadow.type} · Power ${power}</div>
@@ -113,6 +138,7 @@ export const shadowsScreen: ScreenModule = (root, game) => {
           ${shadow.deployed ? "Recall" : "Deploy"}
         </button>
         ${mergeAction}
+        ${evolveAction}
       </div>
     `;
     }).join("");
@@ -143,6 +169,15 @@ export const shadowsScreen: ScreenModule = (root, game) => {
     });
     root.querySelectorAll<HTMLElement>('[data-action="confirm-merge"]').forEach((el) => {
       el.addEventListener("click", () => { game.mergeShadow(el.dataset.id!); mergeConfirmId = null; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="evolve-shadow"]').forEach((el) => {
+      el.addEventListener("click", () => { evolveConfirmId = el.dataset.id!; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="cancel-evolve"]').forEach((el) => {
+      el.addEventListener("click", () => { evolveConfirmId = null; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="confirm-evolve"]').forEach((el) => {
+      el.addEventListener("click", () => { game.evolveShadow(el.dataset.id!); evolveConfirmId = null; draw(); });
     });
     root.querySelectorAll<HTMLSelectElement>("[data-filter]").forEach((el) => {
       el.addEventListener("change", () => {

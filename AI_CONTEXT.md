@@ -165,7 +165,10 @@ power bonus, never decays), a derived Mood label, and one of 6
 archetype-based passive+active skill pairs that make *how* it fights
 alongside you meaningfully different by species (see "Shadow Collection"
 below) - shown right on the card, plus a "Merge Duplicate" button when a
-same-species duplicate exists.
+same-species duplicate exists. A Shadow fully leveled can also be
+**Evolved** into the next rank tier for gold - a real transformation
+(new archetype, new skill pair, higher power ceiling, level reset to 1),
+not just a stat bump (see "Shadow Evolution" below).
 
 **Inventory** — 3 sub-tabs in one screen:
 - **Gear** — paperdoll equipment grid (6 slots: weapon/helmet/chest/legs/
@@ -317,6 +320,45 @@ pulses gold whenever it increases).
   the stored `power` field - overriding `power` in a test fixture does
   nothing; override `rank` to change a test Shadow's actual combat power.
 
+## Shadow Evolution (Phase 2 item #6 of EXPANSION_ROADMAP.md)
+
+- **`Game.evolveShadow(id)`** (store.ts, public) - the only mutator for
+  `ShadowRecord.evolutionStage`. Deliberately reuses the Arise-time
+  pipeline instead of a new one: `nextShadowRank()` (new, in
+  `systems/shadows/data.ts`, wraps a local `RANK_ORDER` ladder) picks the
+  next tier, then `ARCHETYPE_BY_RANK[newRank]` and `SHADOW_RANK_POWER
+  [newRank]` (both already existed, from `data.ts`) supply the new
+  archetype and power baseline - the exact same two lookups
+  `Game.ariseShadow` uses. Because archetype is rank-locked everywhere
+  else (portrait, rim-glow, `SHADOW_SKILLS`), evolving genuinely swaps a
+  Shadow's whole combat kit, not just its power number.
+- Returns a discriminated result, not a bare boolean/null, since there
+  are three distinct rejection reasons the UI needs to tell apart:
+  `{ok:false, reason:"not-maxed"|"max-rank"|"insufficient-gold"}` vs
+  `{ok:true, newRank}`. Follow this pattern for future systems with more
+  than one plausible failure mode - a bare `null` return (used by
+  `mergeShadow`, which only has one failure mode: "no duplicate") stops
+  being enough as soon as a caller needs to say *why*.
+- Level/xp reset to 1/0 on every evolution (so leveling keeps mattering
+  in the new form); `name`/`type`/`loyalty`/`battlesFought` are carried
+  over unchanged (evolving is not re-Arising - it's the same Shadow, its
+  history is real). `SHADOW_EVOLUTION_COST` (systems/shadows/data.ts) is
+  keyed by the *pre-evolution* rank - an E-rank Shadow's first evolution
+  is cheap, an A→S evolution is the most expensive step.
+- **Save compatibility**: `evolutionStage` didn't exist before this item,
+  so `Game.continueSave()` defaults it (`s.evolutionStage ?? 0`) when
+  applying a loaded save - the one place old `ShadowRecord`s from disk
+  get read directly instead of constructed fresh. (Note: the fields #5
+  added - `archetype`/`level`/`xp`/`loyalty`/`battlesFought` - do *not*
+  have this same defaulting; that's a pre-existing gap, not something
+  this item's scope covers fixing.)
+- **UI** (`screens/shadows.ts`): the Evolve button/confirm mirrors the
+  existing Merge button/confirm exactly (a `evolveConfirmId` closure
+  state var alongside `mergeConfirmId`, same Cancel/Confirm two-button
+  row) - both are "only show what's currently actionable" patterns, not
+  a coincidence; new confirm-gated actions on this screen should keep
+  following it.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -383,19 +425,22 @@ Arise, level-up, dissolve).
 
 ## Known limitations / roadmap
 
-- Procedural SVG portraits stand in for real artwork.
+- Procedural SVG portraits stand in for real artwork (see `ART_ASSETS.md`
+  for the exact filename manifest to swap in real images once supplied).
 - Sound design not started.
-- Shadow Army has no rename/upgrade yet (deploy/recall only).
+- Shadow Army still has no rename or equipment-slot management (deploy/
+  recall/merge/evolve only) - equip slots are explicitly #7's job.
 - The full long-term content roadmap is a **fixed, numbered 20-item order
   set by the project owner**, tracked item-by-item in
-  **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture →
-  Inventory improvements → Equipment affix expansion → Shadow Collection →
-  Shadow Evolution → Shadow Management UI → Talent Tree → Hunter Classes →
-  Promotion Exams → Dungeon Modifiers → Random Events → Better Enemy AI →
-  Crafting → Relics → Equipment Sets → Infinite Tower → Achievements ✅ →
-  Titles ✅ → Prestige. Always check that file for current status before
-  starting any expansion work - **do not start the next item without an
-  explicit go-ahead**, and do not reorder or batch items.
+  **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture ✅ →
+  Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
+  Collection ✅ → Shadow Evolution ✅ → Shadow Management UI → Talent Tree →
+  Hunter Classes → Promotion Exams → Dungeon Modifiers → Random Events →
+  Better Enemy AI → Crafting → Relics → Equipment Sets → Infinite Tower →
+  Achievements ✅ → Titles ✅ → Prestige. Always check that file for
+  current status before starting any expansion work - **do not start the
+  next item without an explicit go-ahead**, and do not reorder or batch
+  items.
 
 ## Workflow notes for whoever picks this up next
 

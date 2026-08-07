@@ -85,7 +85,12 @@ engine, no external art/font dependencies — built to run on:
   sometimes drop bonus gold on a kill and can breathe damage across the
   whole enemy wave at once. A "Merge Duplicate" button on a card with a
   same-species double consumes the weaker copy for levels + Loyalty on
-  the one you keep
+  the one you keep. Once a Shadow hits max level, **Evolve** it (gold
+  cost, scales with rank) into the next rank tier - a real transformation,
+  not a stat bump: new archetype, new passive/active skill pair, higher
+  power ceiling, level reset to 1 so it keeps growing meaningfully. Its
+  name, species, Loyalty, and battle history carry over unchanged; an
+  evolution-count badge on the card marks how many times it's happened
 - **Power** — one combined "how strong am I" number, shown on the Title
   screen and prominently on Status: level, every effective stat (gear
   folds in automatically), effective max HP/MP, crit chance, and the
@@ -276,13 +281,14 @@ download the results from the workflow run's **Artifacts** section:
 
 - ~~Persist progress (localStorage save/load) between sessions~~ — done
   (`src/systems/save/`)
-- Real portrait artwork in place of the procedural SVG silhouettes
-- Shadow Army management (rename, deploy in battle, upgrade)
+- Real portrait artwork in place of the procedural SVG silhouettes (see
+  `ART_ASSETS.md` for the exact file list to supply)
+- Shadow Army management (rename, equip gear, deploy in battle)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
 Long-term content roadmap (Equipment Sets, Talent Trees, Hunter Classes,
-Crafting, Relics, Dungeon Modifiers, Random Events, Shadow Evolution,
-Promotion Exams, an Infinite Tower, Daily/Weekly missions, Prestige, combat
-status effects, and more) lives in **`EXPANSION_ROADMAP.md`**, phased so
-each stays a real, working system rather than a stub — Titles and
-Achievements above are Phase 1 of that plan.
+Crafting, Relics, Dungeon Modifiers, Random Events, Promotion Exams, an
+Infinite Tower, Daily/Weekly missions, Prestige, combat status effects, and
+more) lives in **`EXPANSION_ROADMAP.md`**, phased so each stays a real,
+working system rather than a stub — Titles, Achievements, and Shadow
+Evolution above are already ahead of/within that plan.

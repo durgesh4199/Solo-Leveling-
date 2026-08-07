@@ -1,5 +1,5 @@
 import { ARCHETYPE_BY_RANK, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
-import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, ShadowRecord, StatKey, VfxKind, WavePlanEntry } from "./types";
+import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, Rank, ShadowRecord, StatKey, VfxKind, WavePlanEntry } from "./types";
 import { evaluateCondition } from "./systems/progress/conditions";
 import type { ProgressContext } from "./systems/progress/types";
 import { COUNTER_KEYS } from "./systems/progress/types";
@@ -8,7 +8,7 @@ import type { TitleDef } from "./systems/titles/types";
 import { ACHIEVEMENTS } from "./systems/achievements/data";
 import { clearSave, loadSave, writeSave } from "./systems/save";
 import type { SavedGameState } from "./systems/save/types";
-import { SHADOW_MAX_LEVEL, SHADOW_SKILLS, effectiveShadowPower, shadowXpToNext } from "./systems/shadows/data";
+import { SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_SKILLS, effectiveShadowPower, nextShadowRank, shadowXpToNext } from "./systems/shadows/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -258,7 +258,9 @@ export class Game {
       ...this.state,
       player: saved.player,
       gatesCleared: saved.gatesCleared,
-      shadowArmy: saved.shadowArmy,
+      // Older saves predate evolutionStage (#6) - default it rather than
+      // leaving it undefined on a record read directly off disk.
+      shadowArmy: saved.shadowArmy.map((s) => ({ ...s, evolutionStage: s.evolutionStage ?? 0 })),
       inventory: saved.inventory,
       bag: saved.bag,
       shop: saved.shop,
@@ -1150,7 +1152,7 @@ export class Game {
       type: sourceName,
       archetype: ARCHETYPE_BY_RANK[rank],
       power: SHADOW_RANK_POWER[rank],
-      level: 1, xp: 0, loyalty: 0, battlesFought: 0,
+      level: 1, xp: 0, loyalty: 0, battlesFought: 0, evolutionStage: 0,
       deployed: false
     };
     this.emitFx({ kind: "portal" });
@@ -1202,6 +1204,50 @@ export class Game {
       .map((s) => (s.id === keepId ? merged : s));
     this.notify();
     return { consumedName: consume.name };
+  }
+
+  /** Item #6 of the fixed roadmap. Evolving a fully-leveled Shadow advances
+   *  it to the next rank tier - reusing the exact rank -> archetype -> power
+   *  pipeline every Shadow already goes through once at Arise time
+   *  (`ARCHETYPE_BY_RANK`, `SHADOW_RANK_POWER`), rather than inventing a
+   *  second, parallel progression system. Because archetype is rank-locked
+   *  everywhere else in the game (portrait, rim-glow, SHADOW_SKILLS), an
+   *  evolution is a genuine transformation - new silhouette, new passive/
+   *  active skill pair, higher power baseline - not just a bigger number.
+   *
+   *  Gated on being fully leveled (`SHADOW_MAX_LEVEL`) so it's a milestone
+   *  earned through play, not a shortcut around leveling, and costs gold
+   *  scaled to the rank being left behind (`SHADOW_EVOLUTION_COST`).
+   *  `level`/`xp` reset to 1/0 on evolve so growth keeps meaning something
+   *  in the new, stronger form; `name`/`type`/`loyalty`/`battlesFought` -
+   *  the Shadow's identity and history - carry over unchanged. S-rank
+   *  Shadows have nowhere further to evolve to. */
+  evolveShadow(id: string): { ok: true; newRank: Rank } | { ok: false; reason: "not-maxed" | "max-rank" | "insufficient-gold" } {
+    const idx = this.state.shadowArmy.findIndex((s) => s.id === id);
+    if (idx === -1) return { ok: false, reason: "not-maxed" };
+    const shadow = this.state.shadowArmy[idx];
+    if (shadow.level < SHADOW_MAX_LEVEL) return { ok: false, reason: "not-maxed" };
+    const newRank = nextShadowRank(shadow.rank);
+    if (!newRank) return { ok: false, reason: "max-rank" };
+    const cost = SHADOW_EVOLUTION_COST[shadow.rank];
+    if (cost === undefined || this.state.player.gold < cost) return { ok: false, reason: "insufficient-gold" };
+
+    const evolved: ShadowRecord = {
+      ...shadow,
+      rank: newRank,
+      archetype: ARCHETYPE_BY_RANK[newRank],
+      power: SHADOW_RANK_POWER[newRank],
+      level: 1, xp: 0,
+      evolutionStage: shadow.evolutionStage + 1
+    };
+    const army = [...this.state.shadowArmy];
+    army[idx] = evolved;
+    this.state.shadowArmy = army;
+    this.state.player = { ...this.state.player, gold: this.state.player.gold - cost };
+    this.emitFx({ kind: "portal" });
+    this.showGlobalToast(`${shadow.name} evolved into a ${newRank}-Rank Shadow!`, "shadow");
+    this.notify();
+    return { ok: true, newRank };
   }
 
   continueAfterWave() {

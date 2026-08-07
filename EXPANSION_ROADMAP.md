@@ -205,7 +205,47 @@ touching anything below.
      material (#14, not built); a currency with nothing to spend it on
      yet is the same placeholder problem. Merge (above) is the working
      duplicate-handling path until Crafting exists.
-6. Shadow Evolution — pending.
+6. **Shadow Evolution** — ✅ **Done.** `ShadowRecord` gained `evolutionStage`
+   (0 = original Arise form). Evolving a fully-leveled Shadow (`level ===
+   SHADOW_MAX_LEVEL`) advances it to the next rank tier - deliberately
+   reusing the exact rank -> archetype -> power pipeline every Shadow
+   already goes through once at Arise time (`ARCHETYPE_BY_RANK`,
+   `SHADOW_RANK_POWER`) instead of inventing a second, parallel
+   progression system:
+   - **Rank advances one tier** via `nextShadowRank()` (new, in
+     `systems/shadows/data.ts`) - E→D→C→B→A→S. S-rank Shadows have
+     nowhere further to go and can't evolve again.
+   - **Archetype advances with it** (`ARCHETYPE_BY_RANK[newRank]`) - since
+     archetype is rank-locked everywhere else in the game (portrait,
+     rim-glow, `SHADOW_SKILLS`), an evolution is a genuine transformation:
+     new silhouette, new passive/active skill pair, higher power ceiling -
+     not just a bigger number on the same Shadow. This is what "Evolution
+     Stage" from the original brief actually delivers on.
+   - **Power baseline jumps** to the new rank's `SHADOW_RANK_POWER` value -
+     `effectiveShadowPower()` (unchanged) then grows it again from there
+     via level/loyalty exactly like any other Shadow.
+   - **Level/XP reset to 1/0** on evolve, so growth keeps meaning
+     something in the new, stronger form rather than a Shadow sitting
+     maxed forever after one evolution. `name`/`type`/`loyalty`/
+     `battlesFought` - the Shadow's identity and history - carry over
+     unchanged; evolving is not re-Arising.
+   - **Gold-gated**, scaled to the rank being left behind
+     (`SHADOW_EVOLUTION_COST`: E 150g, D 400g, C 800g, B 1400g, A 2200g) -
+     evolution is a milestone earned through play, not a free flip.
+   - UI: Shadow Army cards show an "Evolve to X-Rank · Ng" button once a
+     Shadow is maxed (mirrors the existing Merge confirm pattern - a
+     Cancel/Confirm step, disabled-with-tooltip if gold is short) and a
+     small evolution-count badge (⚡×N) once a Shadow has evolved at least
+     once, so the history stays visible on the card, not just implied.
+   - Save compatibility: `continueSave()` defaults `evolutionStage` to 0
+     for any Shadow loaded from a save that predates this field.
+   - Verified via a live `Game` instance: rejects evolve below max level
+     (no mutation), rejects at S-rank (`max-rank`), rejects without enough
+     gold (no mutation, exact reason returned), correctly advances rank/
+     archetype/power/evolutionStage and resets level/xp on success, gold
+     deducted by the exact tiered cost, loyalty/battlesFought/name/type
+     preserved across the transformation, and an unknown id is a graceful
+     no-op.
 7. Shadow Management UI — pending.
 
 ### Phase 3 — Character progression

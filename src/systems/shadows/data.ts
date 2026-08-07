@@ -1,4 +1,4 @@
-import type { Archetype, ShadowRecord } from "../../types";
+import type { Archetype, Rank, ShadowRecord } from "../../types";
 import { SHADOW_RANK_POWER } from "../../data";
 import type { ShadowSkillSet } from "./types";
 
@@ -108,6 +108,26 @@ export function effectiveShadowPower(shadow: Pick<ShadowRecord, "rank" | "level"
   const loyaltyBonus = Math.floor(shadow.loyalty / 20);
   return Math.round(base + levelBonus + loyaltyBonus);
 }
+
+const RANK_ORDER: Rank[] = ["E", "D", "C", "B", "A", "S"];
+
+/** The rank a Shadow evolves into, or null if it's already at the top -
+ *  S-rank Shadows have nothing further to evolve into. Reuses the same
+ *  rank ladder every other rank-ordered comparison in the codebase walks
+ *  (see e.g. systems/progress/conditions.ts), scoped locally here since
+ *  it's only ever consulted from the evolution path. */
+export function nextShadowRank(rank: Rank): Rank | null {
+  const nextIdx = RANK_ORDER.indexOf(rank) + 1;
+  return nextIdx < RANK_ORDER.length ? RANK_ORDER[nextIdx] : null;
+}
+
+/** Gold cost to evolve a maxed-level Shadow out of the given (pre-
+ *  evolution) rank - keyed by the rank being left behind, scaling up
+ *  steeply since each evolution is a bigger power jump than the last.
+ *  No S entry: S-rank Shadows can't evolve further (see nextShadowRank). */
+export const SHADOW_EVOLUTION_COST: Partial<Record<Rank, number>> = {
+  E: 150, D: 400, C: 800, B: 1400, A: 2200
+};
 
 /** A derived display label, not a separately-tracked/driven stat - there's
  *  no independent "mood" mechanic to invent a driver for (feeding,
