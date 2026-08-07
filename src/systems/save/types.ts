@@ -8,7 +8,7 @@ import type { GameState } from "../../types";
  *  (and failing) to resume mid-round. */
 export type SavedGameState = Pick<
   GameState,
-  "player" | "gatesCleared" | "shadowArmy" | "inventory" | "bag" | "shop" | "progress"
+  "player" | "gatesCleared" | "shadowArmy" | "inventory" | "bag" | "shop" | "progress" | "talents"
 >;
 
 export interface SaveFile {

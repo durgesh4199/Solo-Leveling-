@@ -6,8 +6,10 @@ import type { StatKey } from "../types";
 import { TITLES } from "../systems/titles/data";
 import { ACHIEVEMENTS } from "../systems/achievements/data";
 import { evaluateCondition, conditionProgressText } from "../systems/progress/conditions";
+import { TALENTS, canUnlockTalent } from "../systems/talents/data";
+import type { TalentBranch, TalentNode } from "../systems/talents/types";
 
-type SubTab = "status" | "titles" | "achievements";
+type SubTab = "status" | "titles" | "achievements" | "talents";
 
 /** What a single point in this stat actually buys, in concrete numbers -
  *  previewed on hover (before you commit) and floated as a confirmation
@@ -56,6 +58,10 @@ function mountStatusBody(body: HTMLElement, game: Game): ScreenController {
         <div id="stat-points" class="tag tag-outline"></div>
       </div>
       <div id="stat-rows" style="display:flex;flex-direction:column;gap:var(--space-2);"></div>
+      <div id="talent-points-hint" style="display:none;align-items:center;justify-content:space-between;padding:var(--space-2) var(--space-3);border:1px solid var(--color-accent-700);border-radius:var(--radius-md);font-size:12px;color:var(--color-accent-300);">
+        <span>${icon("lightning")} Talent Points available</span>
+        <span id="talent-points-count" style="font-weight:600;"></span>
+      </div>
     </div>
   `;
 
@@ -119,7 +125,9 @@ function mountStatusBody(body: HTMLElement, game: Game): ScreenController {
     mpFill: body.querySelector<HTMLElement>("#stat-mp-fill")!,
     xpText: body.querySelector<HTMLElement>("#stat-xp-text")!,
     xpFill: body.querySelector<HTMLElement>("#stat-xp-fill")!,
-    points: body.querySelector<HTMLElement>("#stat-points")!
+    points: body.querySelector<HTMLElement>("#stat-points")!,
+    talentHint: body.querySelector<HTMLElement>("#talent-points-hint")!,
+    talentCount: body.querySelector<HTMLElement>("#talent-points-count")!
   };
 
   const update = () => {
@@ -143,6 +151,10 @@ function mountStatusBody(body: HTMLElement, game: Game): ScreenController {
     els.xpText.textContent = `${p.xp} / ${p.xpToNext}`;
     els.xpFill.style.width = `${Math.round((p.xp / p.xpToNext) * 100)}%`;
     els.points.textContent = `${p.statPoints} available`;
+
+    const talentPoints = game.state.talents.points;
+    els.talentHint.style.display = talentPoints > 0 ? "flex" : "none";
+    els.talentCount.textContent = String(talentPoints);
 
     for (const d of STAT_DEFS) {
       const valEl = body.querySelector<HTMLElement>(`#stat-val-${d.key}`);
@@ -225,6 +237,83 @@ function renderAchievements(body: HTMLElement, game: Game): void {
   `;
 }
 
+const BRANCH_META: Record<TalentBranch, { label: string; icon: string }> = {
+  offense: { label: "Offense", icon: "sword" },
+  defense: { label: "Defense", icon: "shield" },
+  utility: { label: "Utility", icon: "lightning" }
+};
+
+/** One node card - Learned (permanent, no button), Available (prereq met,
+ *  Learn button, disabled if out of points), or Locked (prereq not met -
+ *  same "only show what's actionable" idea the Shadow Army screen's
+ *  Merge/Evolve buttons already follow, just spelled out as a state
+ *  label here instead of hidden entirely, since seeing the *rest* of a
+ *  branch's path is the point of a tree). */
+function talentNodeHtml(node: TalentNode, unlocked: Set<string>, points: number): string {
+  const isUnlocked = unlocked.has(node.id);
+  const isAvailable = !isUnlocked && canUnlockTalent(Array.from(unlocked), node);
+  const canAfford = points > 0;
+  const action = isUnlocked
+    ? `<span style="color:var(--color-accent-300);flex-shrink:0;">${icon("check-circle")}</span>`
+    : isAvailable
+    ? `<button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:4px 7px;font-size:10px;" data-action="learn-talent" data-id="${node.id}" ${canAfford ? "" : "disabled"} title="${canAfford ? "Learn" : "No Talent Points available"}">${icon("plus")}</button>`
+    : `<span style="color:var(--color-neutral-700);flex-shrink:0;">${icon("shield")}</span>`;
+  return `
+    <div style="padding:var(--space-2);border:1px solid ${isUnlocked ? "var(--color-accent-600)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);${isUnlocked ? "" : isAvailable ? "" : "opacity:0.55;"}">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+        <div style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${node.name}</div>
+        ${action}
+      </div>
+      <div style="font-size:9px;color:var(--color-neutral-500);margin-top:1px;">${node.description}</div>
+    </div>`;
+}
+
+/** Talents don't change while their sub-tab is open the same way Titles/
+ *  Achievements don't - a one-shot render that redraws itself after every
+ *  action, no update() wiring. Three branch columns, each a strictly
+ *  linear tier-1-to-5 path (see TalentNode.tier's doc comment) rendered
+ *  top-to-bottom with a connecting line - a simple, legible stand-in for
+ *  a full node graph that a single-path-per-branch tree doesn't need. */
+function renderTalents(body: HTMLElement, game: Game): void {
+  const { talents } = game.state;
+  const unlocked = new Set(talents.unlockedIds);
+
+  const branchColumn = (branch: TalentBranch) => {
+    const meta = BRANCH_META[branch];
+    const nodes = TALENTS.filter((t) => t.branch === branch).sort((a, b) => a.tier - b.tier);
+    const rows = nodes.map((node, i) => `
+      ${i > 0 ? `<div style="width:1px;height:8px;background:var(--color-neutral-800);margin:0 auto;"></div>` : ""}
+      ${talentNodeHtml(node, unlocked, talents.points)}
+    `).join("");
+    return `
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:0;">
+        <div style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--color-accent-300);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:var(--space-2);">
+          ${icon(meta.icon as any)} ${meta.label}
+        </div>
+        ${rows}
+      </div>`;
+  };
+
+  const totalLearned = talents.unlockedIds.length;
+  body.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);">
+        <div style="font-size:11px;color:var(--color-neutral-500);">${totalLearned} / ${TALENTS.length} learned · each tier requires the one above it in that branch · 1 point per level, permanent once learned</div>
+        <div class="tag tag-accent" style="flex-shrink:0;">${talents.points} pt${talents.points === 1 ? "" : "s"}</div>
+      </div>
+      <div style="display:flex;gap:var(--space-3);align-items:flex-start;">
+        ${branchColumn("offense")}
+        ${branchColumn("defense")}
+        ${branchColumn("utility")}
+      </div>
+    </div>
+  `;
+
+  body.querySelectorAll<HTMLElement>('[data-action="learn-talent"]').forEach((el) => {
+    el.addEventListener("click", () => { game.learnTalent(el.dataset.id!); renderTalents(body, game); });
+  });
+}
+
 export const statsScreen: ScreenModule = (root, game) => {
   let subTab: SubTab = "status";
   let statusController: ScreenController | null = null;
@@ -245,8 +334,9 @@ export const statsScreen: ScreenModule = (root, game) => {
           <h4 style="margin:0;">Status Window</h4>
         </div>
         <div style="font-size:13px;color:var(--color-neutral-400);margin-bottom:var(--space-4);">${p.name} · ${rank}-Rank · Level ${p.level}</div>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${subTabBtn("status", "Status", "chart-bar")}
+          ${subTabBtn("talents", "Talents", "lightning")}
           ${subTabBtn("titles", "Titles", "sparkles")}
           ${subTabBtn("achievements", "Achievements", "check-circle")}
         </div>
@@ -260,6 +350,7 @@ export const statsScreen: ScreenModule = (root, game) => {
 
     const body = root.querySelector<HTMLElement>("#stats-subtab-body")!;
     if (subTab === "status") statusController = mountStatusBody(body, game);
+    else if (subTab === "talents") renderTalents(body, game);
     else if (subTab === "titles") renderTitles(body, game);
     else renderAchievements(body, game);
   };

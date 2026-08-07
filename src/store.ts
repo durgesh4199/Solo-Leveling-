@@ -9,6 +9,7 @@ import { ACHIEVEMENTS } from "./systems/achievements/data";
 import { clearSave, loadSave, writeSave } from "./systems/save";
 import type { SavedGameState } from "./systems/save/types";
 import { SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_NAME_MAX_LENGTH, SHADOW_SKILLS, effectiveShadowPower, nextShadowRank, shadowXpToNext } from "./systems/shadows/data";
+import { TALENT_POINTS_PER_LEVEL, TALENT_REGISTRY, canUnlockTalent, talentCritFlat, talentGoldPct, talentStatPct, talentXpPct } from "./systems/talents/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -45,6 +46,7 @@ const INITIAL_STATE: GameState = {
   shop: { stock: [], rerollCost: 60, lastRerollAt: 0 },
   battle: null,
   progress: { counters: {}, unlockedTitleIds: [], equippedTitleId: null, unlockedAchievementIds: [] },
+  talents: { points: 0, unlockedIds: [] },
   globalToast: null
 };
 
@@ -131,11 +133,14 @@ export class Game {
   }
 
   /** Base stat + whatever's equipped anywhere rolled a matching affix,
-   *  then the equipped Title's percentage bonus (if any) on top - same
-   *  ordering as a real "gear, then multiplier" pipeline, so a Title never
-   *  feels weaker just because a stat point/affix already boosted the
-   *  base. Public - the battle UI reads this too, for the combat-details
-   *  readout. */
+   *  then the equipped Title's percentage bonus and every unlocked
+   *  Talent's percentage bonus (#8) - combined into *one* percentage and
+   *  applied as a single multiply, not two nested multiplies, so two
+   *  small bonuses stack additively (title 3% + talent 3% = 6%) instead
+   *  of quietly compounding (1.03 x 1.03 = 6.09%) - the "no multiplier
+   *  chains" guardrail in EXPANSION_ROADMAP.md applies just as much
+   *  between systems as within one. Public - the battle UI reads this
+   *  too, for the combat-details readout. */
   effectiveStat(key: StatKey): number {
     const p = this.state.player;
     let value = p[key];
@@ -146,10 +151,13 @@ export class Game {
       }
     }
     const title = this.equippedTitle();
+    let pct = 0;
     if (title) {
-      if (title.bonus.kind === "statPct" && title.bonus.stat === key) value *= 1 + title.bonus.value;
-      else if (title.bonus.kind === "allStatsPct") value *= 1 + title.bonus.value;
+      if (title.bonus.kind === "statPct" && title.bonus.stat === key) pct += title.bonus.value;
+      else if (title.bonus.kind === "allStatsPct") pct += title.bonus.value;
     }
+    pct += talentStatPct(this.state.talents.unlockedIds, key);
+    if (pct > 0) value *= 1 + pct;
     return value;
   }
 
@@ -194,7 +202,8 @@ export class Game {
     const equipmentCrit = this.equipmentAffixSum("crit") / 100;
     const title = this.equippedTitle();
     const titleCrit = title?.bonus.kind === "critFlat" ? title.bonus.value : 0;
-    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit);
+    const talentCrit = talentCritFlat(this.state.talents.unlockedIds);
+    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit + talentCrit);
   }
 
   private rollCrit(): boolean {
@@ -258,6 +267,14 @@ export class Game {
       bag: saved.bag,
       shop: saved.shop,
       progress: saved.progress ?? structuredClone(INITIAL_STATE.progress),
+      // Older saves predate the Talent Tree (#8) entirely - rather than
+      // just defaulting to 0 points and leaving an already-leveled
+      // Hunter permanently behind on a currency that didn't exist yet
+      // when they earned those levels, a save missing `talents` gets a
+      // one-time catch-up grant of 1 point per level already reached
+      // (the same TALENT_POINTS_PER_LEVEL rate grantXp uses going
+      // forward) instead of a bare empty state.
+      talents: saved.talents ?? { points: Math.max(0, saved.player.level - 1) * TALENT_POINTS_PER_LEVEL, unlockedIds: [] },
       screen: "gates",
       battle: null
     };
@@ -283,7 +300,8 @@ export class Game {
       inventory: this.state.inventory,
       bag: this.state.bag,
       shop: this.state.shop,
-      progress: this.state.progress
+      progress: this.state.progress,
+      talents: this.state.talents
     });
   }
 
@@ -615,16 +633,19 @@ export class Game {
   }
 
   /** Adds XP, rolling over levels (each grants max HP/MP headroom + stat
-   *  points). Deliberately does *not* top off current HP/MP - leveling up
-   *  mid-fight is a milestone, not a free heal, so a level-up in a rough
-   *  battle still leaves you in that rough battle. Returns whether a
-   *  level-up happened. */
+   *  points + a Talent Point, #8). Deliberately does *not* top off
+   *  current HP/MP - leveling up mid-fight is a milestone, not a free
+   *  heal, so a level-up in a rough battle still leaves you in that rough
+   *  battle. Returns whether a level-up happened. */
   private grantXp(amount: number): boolean {
     const title = this.equippedTitle();
-    if (title?.bonus.kind === "xpPct") amount = Math.round(amount * (1 + title.bonus.value));
+    let pct = title?.bonus.kind === "xpPct" ? title.bonus.value : 0;
+    pct += talentXpPct(this.state.talents.unlockedIds);
+    if (pct > 0) amount = Math.round(amount * (1 + pct));
     const player = { ...this.state.player };
     player.xp += amount;
     let leveled = false;
+    let talentPointsGained = 0;
     while (player.xp >= player.xpToNext) {
       player.xp -= player.xpToNext;
       player.level += 1;
@@ -632,9 +653,13 @@ export class Game {
       player.xpToNext = Math.round(player.xpToNext * 1.18);
       player.maxHp += 15; player.maxMp += 5;
       player.statPoints += 3;
+      talentPointsGained += TALENT_POINTS_PER_LEVEL;
       leveled = true;
     }
     this.state.player = player;
+    if (talentPointsGained > 0) {
+      this.state.talents = { ...this.state.talents, points: this.state.talents.points + talentPointsGained };
+    }
     return leveled;
   }
 
@@ -643,8 +668,9 @@ export class Game {
   private grantKillRewards(battle: BattleState, unit: EnemyUnit) {
     if (unit.gold > 0) {
       const title = this.equippedTitle();
-      const goldMult = title?.bonus.kind === "goldPct" ? 1 + title.bonus.value : 1;
-      const gold = Math.round(unit.gold * goldMult);
+      let goldPct = title?.bonus.kind === "goldPct" ? title.bonus.value : 0;
+      goldPct += talentGoldPct(this.state.talents.unlockedIds);
+      const gold = Math.round(unit.gold * (1 + goldPct));
       this.state.player = { ...this.state.player, gold: this.state.player.gold + gold };
       this.incrementCounter(COUNTER_KEYS.goldEarnedTotal, gold);
     }
@@ -1365,6 +1391,28 @@ export class Game {
     }
     this.state.player = player;
     this.notify();
+  }
+
+  /** Item #8 of the fixed roadmap - Talent Tree. Spends one Talent Point
+   *  to permanently learn `nodeId`, provided its prerequisite (the
+   *  previous tier in its branch, if any - see canUnlockTalent) is
+   *  already learned and at least one point is available. Talents are
+   *  never un-learned (no respec) - same "no take-backs" stance the
+   *  Merge/Evolve confirms already take on their own permanent choices.
+   *  Returns whether it applied, so the UI can tell a no-op click apart
+   *  from a real one without needing to duplicate this method's checks. */
+  learnTalent(nodeId: string): boolean {
+    const node = TALENT_REGISTRY.get(nodeId);
+    if (!node) return false;
+    if (this.state.talents.unlockedIds.includes(nodeId)) return false;
+    if (this.state.talents.points <= 0) return false;
+    if (!canUnlockTalent(this.state.talents.unlockedIds, node)) return false;
+    this.state.talents = {
+      points: this.state.talents.points - 1,
+      unlockedIds: [...this.state.talents.unlockedIds, nodeId]
+    };
+    this.notify();
+    return true;
   }
 
   // ---- inventory / equipment ----

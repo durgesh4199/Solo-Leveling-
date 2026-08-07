@@ -102,6 +102,14 @@ engine, no external art/font dependencies — built to run on:
   folds in automatically), effective max HP/MP, crit chance, and the
   combined power of your *whole* Shadow Army all feed into it, and it
   pulses gold on Status whenever it goes up
+- **Talent Tree** — a Talents sub-tab on Status: 1 Talent Point per level,
+  spent permanently (no respec) on a 15-node tree - 3 branches, 5 tiers
+  each, a straight path per branch (unlock tier 2 only after tier 1 in
+  that same branch, and so on). **Offense** stacks STR and Crit into a
+  glass-cannon capstone; **Defense** stacks VIT/INT into an All Stats
+  capstone; **Utility** trades AGI/PER into a Gold/XP economy topped with
+  a Crit capstone - three genuinely different builds, stacking on top of
+  gear and an equipped Title rather than competing with either
 - **Equipment** — 6 slots (Weapon, Helmet, Body Armor, Legs, Ring, Amulet),
   each item rolling 1-4 random affixes depending on rarity: the five core
   stats (folds into effectiveStat, same as a stat point), direct flat
@@ -293,9 +301,9 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Talent Trees, Hunter Classes, Crafting, Relics,
-Equipment Sets, Dungeon Modifiers, Random Events, Promotion Exams, an
-Infinite Tower, Daily/Weekly missions, Prestige, combat status effects, and
-more) lives in **`EXPANSION_ROADMAP.md`**, phased so each stays a real,
-working system rather than a stub — Titles, Achievements, and Shadow
-Evolution above are already ahead of/within that plan.
+Long-term content roadmap (Hunter Classes, Crafting, Relics, Equipment
+Sets, Dungeon Modifiers, Random Events, Promotion Exams, an Infinite
+Tower, Daily/Weekly missions, Prestige, combat status effects, and more)
+lives in **`EXPANSION_ROADMAP.md`**, phased so each stays a real, working
+system rather than a stub — Titles, Achievements, Shadow Evolution, and
+the Talent Tree above are already ahead of/within that plan.

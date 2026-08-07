@@ -142,7 +142,7 @@ blood-red (float numbers, impact glow, screen flash); non-damage effects
 (guard, Arise, level-up) stay violet. No text combat log — feedback is
 purely visual/animated.
 
-**Stats** — 3 sub-tabs (`stats.ts` follows the same sub-tab shell pattern
+**Stats** — 4 sub-tabs (`stats.ts` follows the same sub-tab shell pattern
 as Inventory now, via a small `mountSubTab()` wrapper - the original
 Status body moved into `mountStatusBody()` unchanged, still a persistent-
 DOM/targeted-update controller, not a full rebuild, so its stat-point
@@ -152,7 +152,9 @@ gain-toast animation timers stay valid):
   Hovering previews exactly what the point buys (`gainText()`); clicking
   floats the same text as a confirmation. STR→Attack damage, AGI/PER→crit
   chance + guard-miss reduction, VIT/INT→**immediate** max (and current)
-  HP/MP (not gated behind a future level-up).
+  HP/MP (not gated behind a future level-up). Also surfaces an accent-
+  bordered "Talent Points available" hint whenever there's an unspent one.
+- **Talents** — see "Talent Tree" below.
 - **Titles** — see "Meta-progression" below.
 - **Achievements** — see "Meta-progression" below.
 
@@ -418,6 +420,63 @@ pulses gold whenever it increases).
   gear, the same "compute the delta" approach #4/#5's tests already used
   for the Hunter's own gear.
 
+## Talent Tree (Phase 3 item #8 of EXPANSION_ROADMAP.md)
+
+- **`src/systems/talents/`** mirrors `systems/titles/` structurally
+  (`types.ts` + `data.ts` + a registry), but its `TalentBonus` union
+  intentionally duplicates `TitleBonus`'s 5 kinds rather than importing
+  it - see the doc comment on `TalentBonus` for why (unrelated systems
+  that happen to share a shape, same call already made for `RANK_ORDER`).
+  The one real difference from Titles: a Title is one-equipped-at-a-time,
+  but many Talent nodes can be unlocked simultaneously, so nothing reads
+  "the" bonus - every integration site sums across every unlocked node
+  (`talentStatPct`/`talentCritFlat`/`talentXpPct`/`talentGoldPct`).
+- **`GameState.talents: TalentState`** (`{points, unlockedIds}`) is a
+  brand-new top-level state slice, defined in root `types.ts` right next
+  to `ProgressState` with the same reasoning: it's shared, plain data
+  (no behavior) that `GameState` needs to reference directly, so it stays
+  in the root file rather than `systems/talents/types.ts` even though
+  everything else Talent-related lives there. Follow this precedent for
+  any future system's own top-level state slice.
+- **Additive stacking across systems, not just within one**: every site
+  that already read an equipped Title's percentage bonus
+  (`effectiveStat`, `critChance`, `grantXp`, `grantKillRewards`) now
+  computes `titlePct + talentPct` as one combined number *before*
+  applying a single `value *= 1 + pct`, instead of multiplying twice.
+  Two nested multiplies would silently compound (1.03 x 1.03 = 6.09%
+  effective, not a flat 6%) - small at these magnitudes, but exactly the
+  kind of drift the "no multiplier chains" guardrail exists to prevent,
+  and it compounds for real once more percentage-granting systems land
+  (Hunter Classes, Relics, Equipment Sets, Prestige - all still pending).
+  **Any future system adding its own percentage bonus to one of these
+  four sites must fold into the same combined `pct` before the single
+  multiply, not bolt on a second multiply.**
+- **`Game.learnTalent(nodeId)`** is the only mutator - no respec exists
+  (same permanent-choice stance Merge/Evolve already take on the Shadow
+  Army screen). `canUnlockTalent()` (systems/talents/data.ts) is pure and
+  reused identically by both the mutator's own gating and the UI's
+  Learned/Available/Locked card state, so they can never disagree with
+  each other about whether a node is currently learnable.
+- **Save migration precedent**: unlike #6/#7's new *fields* on an
+  existing array (`ShadowRecord.evolutionStage`/`.equipment`, defaulted
+  with `?? 0`/`?? {}`), `talents` is an entirely new top-level slice with
+  nothing to default from - a pre-#8 save has no `talents` key at all.
+  `continueSave()` distinguishes "field truly absent" (`saved.talents ??
+  ...`) and grants a one-time catch-up (1 point x levels already reached)
+  rather than just defaulting to an empty `{points:0, unlockedIds:[]}`,
+  so an already-leveled Hunter isn't permanently shorted on a currency
+  that didn't exist when they earned those levels. A future system
+  landing its own new top-level slice should make the same call
+  explicitly (catch-up grant vs. plain default) rather than defaulting
+  by default.
+- **Testing note**: `g["grantXp"](amount)` and `g["grantKillRewards"]
+  (battle, unit)` (bracket access, same private-method-reach-around as
+  #7's `companionStrike` tests) let a test force many level-ups in one
+  call or a single kill-reward payout without playing through a full
+  battle. `g["pendingSave"] = {...}` followed by `g.continueSave()` is
+  how to test the save-migration path without round-tripping through
+  actual `localStorage` JSON.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -492,7 +551,7 @@ Arise, level-up, dissolve).
   **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture ✅ →
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
-  Tree → Hunter Classes → Promotion Exams → Dungeon Modifiers → Random
+  Tree ✅ → Hunter Classes → Promotion Exams → Dungeon Modifiers → Random
   Events → Better Enemy AI → Crafting → Relics → Equipment Sets →
   Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always check
   that file for current status before starting any expansion work -

@@ -258,6 +258,19 @@ export interface ProgressState {
   unlockedAchievementIds: string[];
 }
 
+/** Talent Tree state (see src/systems/talents/) - `points` is unspent
+ *  currency (like PlayerState.statPoints, but spent on this tree
+ *  instead), `unlockedIds` is which nodes have been permanently learned.
+ *  Kept as its own top-level slice rather than folded into `player` or
+ *  `progress`: it's spent currency + a manual player choice (like
+ *  `player.statPoints`), not a counter-driven auto-unlock (like
+ *  `progress`'s Title/Achievement lists), so it doesn't fit either
+ *  existing slice's semantics cleanly. */
+export interface TalentState {
+  points: number;
+  unlockedIds: string[];
+}
+
 /** A brief, app-wide notification (achievement/title unlock, etc.) that
  *  isn't tied to being inside a battle - battle already has its own toast
  *  on BattleState for in-run messages. Rendered by the app shell
@@ -283,5 +296,6 @@ export interface GameState {
   shop: { stock: LootItem[]; rerollCost: number; lastRerollAt: number };
   battle: BattleState | null;
   progress: ProgressState;
+  talents: TalentState;
   globalToast?: GlobalToast | null;
 }

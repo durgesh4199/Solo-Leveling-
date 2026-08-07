@@ -305,7 +305,65 @@ touching anything below.
      changes `companionStrike`'s behavior when rolled onto Shadow gear.
 
 ### Phase 3 — Character progression
-8. Talent Tree — pending.
+8. **Talent Tree** — ✅ **Done.** A second, smaller currency alongside the
+   existing per-level stat points: 1 Talent Point per level
+   (`TALENT_POINTS_PER_LEVEL`), spent permanently (no respec) on a
+   15-node tree - 3 branches (Offense/Defense/Utility) x 5 tiers, each
+   branch a single linear path (tier N needs tier N-1 in the *same*
+   branch already learned) rather than a full node graph, so "invest
+   deeper in one branch or spread across all three" stays a real, legible
+   choice without needing graph-layout UI.
+   - `src/systems/talents/` (new system, mirrors Titles' own structure):
+     `types.ts` has `TalentBonus` - the exact same 5 kinds `TitleBonus`
+     already uses (statPct/allStatsPct/xpPct/goldPct/critFlat), so every
+     value reuses formulas/pipelines that already exist rather than
+     inventing new ones. The difference from Titles: many nodes can be
+     unlocked *simultaneously* (a Title is one-equipped-at-a-time), so
+     every read site sums across all unlocked nodes
+     (`talentStatPct`/`talentCritFlat`/`talentXpPct`/`talentGoldPct` in
+     `data.ts`) instead of reading one active bonus.
+   - **Branch identities**: Offense stacks STR + Crit into a glass-cannon
+     capstone (+10% STR); Defense stacks VIT/INT into an all-stats
+     capstone (+5% All Stats); Utility trades AGI/PER into a Gold/XP
+     economy with a Crit capstone (+5% Crit) - three genuinely different
+     builds, not one tree relabeled three times.
+   - **Stacking is additive, not compounding**: `effectiveStat`,
+     `critChance`, `grantXp`, and `grantKillRewards` each already read an
+     equipped Title's bonus; extending them for Talents combines the
+     Title's percentage and the summed Talent percentage into *one*
+     number before applying a single multiply, rather than two nested
+     multiplies - two independent +3% bonuses become a flat +6%, not a
+     silently-compounding 6.09% (the "no multiplier chains" guardrail in
+     this file applies just as much *between* systems as within one).
+   - **`Game.learnTalent(nodeId)`** (public): spends one point, requires
+     the node's prerequisite already learned, rejects an already-learned
+     node (no double-spend) and an out-of-points attempt, with no state
+     mutation on any rejection path.
+   - **Save migration**: `talents` is a brand-new top-level `GameState`
+     slice, so a save from before this item has no such field at all -
+     rather than just defaulting to 0 points and leaving an already-
+     leveled Hunter permanently behind on a currency that didn't exist
+     when they earned those levels, `continueSave()` grants a one-time
+     catch-up of 1 point per level already reached the first time such a
+     save loads. A save that already has a `talents` field (created after
+     this item shipped) is loaded as-is, no double-grant.
+   - **UI**: a 4th sub-tab ("Talents") on the Status screen, next to
+     Titles/Achievements - 3 columns, one per branch, each a top-to-bottom
+     tier list with a thin connecting line; a node shows Learned
+     (checkmark), Available (a Learn button, disabled with a tooltip if
+     out of points), or Locked (dimmed, prereq not met) - not hidden
+     entirely, since seeing the rest of a branch's path is the point of a
+     tree. The Status sub-tab also surfaces an accent-bordered "Talent
+     Points available" hint whenever there's a point to spend, so it's
+     not buried behind a tab the player has no reason to open yet.
+   - Verified via a live `Game` instance: full learn-gating (locked/
+     already-learned/no-points/unknown-id, each confirmed to leave state
+     unmutated on rejection), Talent Points granted 1:1 with levels
+     gained in the same `grantXp` call that grants stat points (no
+     regression there), additive (not compounding) stacking with a Title
+     bonus verified numerically at both small and large stat values,
+     critChance/gold-reward integration, and both the fresh-save and
+     already-migrated `continueSave()` paths.
 9. Hunter Classes — pending.
 10. Promotion Exams — pending.
 
