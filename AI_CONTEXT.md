@@ -168,7 +168,11 @@ below) - shown right on the card, plus a "Merge Duplicate" button when a
 same-species duplicate exists. A Shadow fully leveled can also be
 **Evolved** into the next rank tier for gold - a real transformation
 (new archetype, new skill pair, higher power ceiling, level reset to 1),
-not just a stat bump (see "Shadow Evolution" below).
+not just a stat bump (see "Shadow Evolution" below). Each card can also
+be **renamed** and has its own **Gear** panel - 6 equipment slots
+(weapon/helmet/chest/legs/ring/amulet), the same Bag/LootItem system the
+Hunter's own paperdoll uses, feeding both `effectiveShadowPower` and its
+own combat behavior (see "Shadow Management UI" below).
 
 **Inventory** — 3 sub-tabs in one screen:
 - **Gear** — paperdoll equipment grid (6 slots: weapon/helmet/chest/legs/
@@ -359,6 +363,61 @@ pulses gold whenever it increases).
   a coincidence; new confirm-gated actions on this screen should keep
   following it.
 
+## Shadow Management UI (Phase 2 item #7 of EXPANSION_ROADMAP.md)
+
+- **`ShadowRecord.equipment`** is a `Partial<Record<ItemSlot, LootItem>>`
+  - literally the same type as `PlayerState.equipment`. `Game.
+  equipShadowItem`/`unequipShadowItem` are line-for-line the same move-
+  from-bag/swap-in/return-previous logic as `equipItem`/`unequipItem`,
+  just indexed into `shadowArmy[idx].equipment` instead of `player.
+  equipment`. Any future per-entity equipment (if one ever shows up)
+  should follow this exact shape rather than inventing a new one.
+- **`sumEquipmentAffix(equipment, key)`** (new, `data.ts`) is the shared
+  loop both `Game.equipmentAffixSum` (player) and the Shadow-power/
+  companionStrike code below now call - added specifically so Shadow
+  gear didn't need a second, copy-pasted version of the same sum. If a
+  third equipment-bearing entity ever shows up, it reuses this too rather
+  than a third copy.
+- **Where each affix actually lands on Shadow gear** (companionStrike,
+  store.ts): `fireDamage` folds into the `strike()` closure's flat damage
+  term; `crit` is an independent `Math.random()*100 < gearCritPct` check
+  ORed into the existing `isCrit` condition (stacks with the archetype's
+  own crit-chance passive, doesn't replace it); `lifeSteal` reuses
+  `applyLifeSteal` (now takes an explicit `pct` argument instead of
+  reading `equipmentAffixSum` internally, so both the Hunter's own gear
+  and a Shadow's gear share one heal implementation - see its call sites
+  in battleAttack/useSkill/companionStrike); `attackSpeed` rolls once
+  *after* whichever primary action resolved (single strike, or one of the
+  6 Active-Skill branches) and re-reads `currentTarget(battle)` rather
+  than reusing the original `target`, since the primary action may have
+  killed it or (for the Wyrm's AoE) hit several others instead. `manaRegen`
+  is **not** handled in companionStrike at all - it ticks in `enemyTurn`'s
+  existing once-per-completed-round site, added alongside the Hunter's
+  own `equipmentAffixSum("manaRegen")` read there.
+- **Core-stat affixes (STR/AGI/INT/VIT/PER) have no combat mechanic to
+  feed on a Shadow** (no per-stat formulas exist for a Shadow the way
+  `effectiveStat`/`strAtkPerPoint`/etc. exist for the Hunter), so they
+  fold straight into `effectiveShadowPower()` instead, at a fixed
+  `POWER_PER_STAT_AFFIX` rate (`systems/shadows/data.ts`). `hp`/`mp`
+  affixes have *no* equivalent fold-in and are genuinely inert on Shadow
+  gear - a Shadow has no HP/MP pool of its own, full stop. This is
+  structural, not a deferred TODO; don't try to "fix" it by inventing a
+  Shadow HP/MP pool as a side effect of an unrelated feature.
+- **`mergeShadow` now returns the consumed Shadow's equipped gear to the
+  Bag** before removing it from `shadowArmy` - this became a correctness
+  requirement the moment Shadows could hold gear (previously merge just
+  discarded the whole record, which was safe when there was nothing on
+  it to lose). Any other place a `ShadowRecord` gets removed outright in
+  the future needs the same check.
+- **Testing note**: `g["companionStrike"](battle)` (bracket access) is
+  how a Node test script reaches the private method directly - TS
+  `private` is compile-time only, `tsx` transpiles it straight through.
+  Isolating one gear affix's effect means holding every other input
+  fixed (same archetype/rank/target HP/mocked Math.random) and comparing
+  total damage dealt with vs. without that affix on the test Shadow's
+  gear, the same "compute the delta" approach #4/#5's tests already used
+  for the Hunter's own gear.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -428,18 +487,17 @@ Arise, level-up, dissolve).
 - Procedural SVG portraits stand in for real artwork (see `ART_ASSETS.md`
   for the exact filename manifest to swap in real images once supplied).
 - Sound design not started.
-- Shadow Army still has no rename or equipment-slot management (deploy/
-  recall/merge/evolve only) - equip slots are explicitly #7's job.
 - The full long-term content roadmap is a **fixed, numbered 20-item order
   set by the project owner**, tracked item-by-item in
   **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture ✅ →
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
-  Collection ✅ → Shadow Evolution ✅ → Shadow Management UI → Talent Tree →
-  Hunter Classes → Promotion Exams → Dungeon Modifiers → Random Events →
-  Better Enemy AI → Crafting → Relics → Equipment Sets → Infinite Tower →
-  Achievements ✅ → Titles ✅ → Prestige. Always check that file for
-  current status before starting any expansion work - **do not start the
-  next item without an explicit go-ahead**, and do not reorder or batch
+  Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
+  Tree → Hunter Classes → Promotion Exams → Dungeon Modifiers → Random
+  Events → Better Enemy AI → Crafting → Relics → Equipment Sets →
+  Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always check
+  that file for current status before starting any expansion work -
+  **do not start the next item without an explicit go-ahead**, and do
+  not reorder or batch
   items.
 
 ## Workflow notes for whoever picks this up next

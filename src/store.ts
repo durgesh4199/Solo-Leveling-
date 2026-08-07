@@ -1,5 +1,5 @@
-import { ARCHETYPE_BY_RANK, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, totalEnemiesForGate } from "./data";
-import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LungeSide, Rank, ShadowRecord, StatKey, VfxKind, WavePlanEntry } from "./types";
+import { ARCHETYPE_BY_RANK, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, sumEquipmentAffix, totalEnemiesForGate } from "./data";
+import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LootItem, LungeSide, Rank, ShadowRecord, StatKey, VfxKind, WavePlanEntry } from "./types";
 import { evaluateCondition } from "./systems/progress/conditions";
 import type { ProgressContext } from "./systems/progress/types";
 import { COUNTER_KEYS } from "./systems/progress/types";
@@ -8,7 +8,7 @@ import type { TitleDef } from "./systems/titles/types";
 import { ACHIEVEMENTS } from "./systems/achievements/data";
 import { clearSave, loadSave, writeSave } from "./systems/save";
 import type { SavedGameState } from "./systems/save/types";
-import { SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_SKILLS, effectiveShadowPower, nextShadowRank, shadowXpToNext } from "./systems/shadows/data";
+import { SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_NAME_MAX_LENGTH, SHADOW_SKILLS, effectiveShadowPower, nextShadowRank, shadowXpToNext } from "./systems/shadows/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -160,15 +160,7 @@ export class Game {
    *  useSkill, enemyTurn, and the applyLifeSteal/rollBasicAttack helpers
    *  below). */
   private equipmentAffixSum(key: Exclude<AffixKey, StatKey>): number {
-    const p = this.state.player;
-    let sum = 0;
-    for (const item of Object.values(p.equipment)) {
-      if (!item) continue;
-      for (const affix of item.affixes) {
-        if (affix.key === key) sum += affix.value;
-      }
-    }
-    return sum;
+    return sumEquipmentAffix(this.state.player.equipment, key);
   }
 
   /** Base max HP/MP (level + VIT/INT stat points) plus flat "hp"/"mp"
@@ -258,9 +250,10 @@ export class Game {
       ...this.state,
       player: saved.player,
       gatesCleared: saved.gatesCleared,
-      // Older saves predate evolutionStage (#6) - default it rather than
-      // leaving it undefined on a record read directly off disk.
-      shadowArmy: saved.shadowArmy.map((s) => ({ ...s, evolutionStage: s.evolutionStage ?? 0 })),
+      // Older saves predate evolutionStage (#6) and equipment (#7) -
+      // default them rather than leaving them undefined on a record read
+      // directly off disk.
+      shadowArmy: saved.shadowArmy.map((s) => ({ ...s, evolutionStage: s.evolutionStage ?? 0, equipment: s.equipment ?? {} })),
       inventory: saved.inventory,
       bag: saved.bag,
       shop: saved.shop,
@@ -713,16 +706,19 @@ export class Game {
     return { dmg, isCrit };
   }
 
-  /** Heals the player for a % of damage their own hit just dealt, if a
-   *  Life Steal affix is equipped - deliberately not applied to the
-   *  deployed Shadow's own strikes (companionStrike), since it's the
-   *  Hunter's gear doing the stealing, not the Shadow's. No-ops (no float,
-   *  no state write) when there's nothing to heal, including "already at
-   *  full HP", so it can be called unconditionally after every player hit
+  /** Heals the player for a % of damage a hit just dealt, if the relevant
+   *  gear carries a Life Steal affix - `pct` is passed in explicitly
+   *  rather than read internally so the same heal logic serves both the
+   *  Hunter's own gear (battleAttack/useSkill, passing
+   *  `equipmentAffixSum("lifeSteal")`) and a deployed Shadow's gear
+   *  (companionStrike, passing that Shadow's own lifeSteal sum) without
+   *  duplicating the heal math - either way it's the *gear* doing the
+   *  stealing, whichever combatant is wearing it. No-ops (no float, no
+   *  state write) when there's nothing to heal, including "already at
+   *  full HP", so it can be called unconditionally after every hit
    *  without spamming a "+0" float. */
-  private applyLifeSteal(battle: BattleState, damageDealt: number) {
+  private applyLifeSteal(battle: BattleState, damageDealt: number, pct: number) {
     if (damageDealt <= 0) return;
-    const pct = this.equipmentAffixSum("lifeSteal");
     if (pct <= 0) return;
     const rawHeal = Math.round(damageDealt * (pct / 100));
     if (rawHeal <= 0) return;
@@ -796,20 +792,35 @@ export class Game {
     const activeTriggers = Math.random() * 100 < active.effect.chance;
     let killedAny = false;
 
+    // The Shadow's own equipped gear (#7) - crit/lifeSteal/attackSpeed/
+    // fireDamage are combat-round affixes applied directly here, the same
+    // way the Hunter's own gear works in battleAttack/useSkill (see
+    // equipmentAffixSum's call sites); core-stat affixes already folded
+    // into `power` above via effectiveShadowPower. Mana Regen is handled
+    // separately in enemyTurn's round-completion tick, alongside the
+    // Hunter's own.
+    const gearFireDamage = sumEquipmentAffix(shadow.equipment, "fireDamage");
+    const gearCritPct = sumEquipmentAffix(shadow.equipment, "crit");
+    const gearLifeStealPct = sumEquipmentAffix(shadow.equipment, "lifeSteal");
+    const gearAttackSpeedPct = sumEquipmentAffix(shadow.equipment, "attackSpeed");
+
     const strike = (tgt: EnemyUnit, dmgMult: number, ignoreDef: boolean, forceCrit: boolean) => {
-      let dmg = Math.max(1, Math.round(power * dmgMult + (Math.random() * 4 - 2) - (ignoreDef ? 0 : tgt.def * 0.5)));
+      let dmg = Math.max(1, Math.round(power * dmgMult + gearFireDamage + (Math.random() * 4 - 2) - (ignoreDef ? 0 : tgt.def * 0.5)));
       if (passive.effect.key === "executeBonus" && tgt.hp <= tgt.maxHp * passive.effect.hpThresholdPct) {
         dmg = Math.round(dmg * (1 + passive.effect.bonusPct));
       } else if (passive.effect.key === "damageMult") {
         dmg = Math.round(dmg * (1 + passive.effect.pct));
       }
-      const isCrit = forceCrit || (passive.effect.key === "critChance" && Math.random() * 100 < passive.effect.chance);
+      const isCrit = forceCrit
+        || (passive.effect.key === "critChance" && Math.random() * 100 < passive.effect.chance)
+        || (gearCritPct > 0 && Math.random() * 100 < gearCritPct);
       if (isCrit) dmg = Math.round(dmg * 1.8);
 
       this.setUnitVfx(tgt, isCrit ? "flurry" : "slash");
       const dealt = this.applyDamage(battle, tgt, dmg, isCrit);
       if (!tgt.alive) killedAny = true;
       this.clearHitFlagLater(tgt.uid);
+      this.applyLifeSteal(battle, dealt, gearLifeStealPct);
 
       if (passive.effect.key === "manaOnHit") {
         const maxMp = this.effectiveMaxMp();
@@ -844,6 +855,15 @@ export class Game {
       }
     } else {
       strike(target, 1, false, false);
+    }
+
+    // Attack Speed affix on the Shadow's own gear - a % chance at one more
+    // strike against whatever's still standing, re-reading currentTarget
+    // rather than reusing `target` since the primary action above may have
+    // killed it (or, for the AoE active, hit several others instead).
+    if (gearAttackSpeedPct > 0 && Math.random() * 100 < gearAttackSpeedPct) {
+      const followUp = this.currentTarget(battle);
+      if (followUp) strike(followUp, 1, false, false);
     }
 
     if (killedAny && passive.effect.key === "goldOnKill" && Math.random() * 100 < passive.effect.chance) {
@@ -906,8 +926,12 @@ export class Game {
         // it restores MP even on a round where the player just Attacked
         // rather than cast a Skill. No float text - the MP bar filling a
         // little every round is feedback enough without a "+2" spam on
-        // top of whatever else just happened.
-        const manaRegen = this.equipmentAffixSum("manaRegen");
+        // top of whatever else just happened. Counts both the Hunter's
+        // own gear and the deployed Shadow's own gear (#7) - either
+        // source is restoring the same MP pool.
+        const deployedForRegen = this.state.shadowArmy.find((s) => s.deployed);
+        const manaRegen = this.equipmentAffixSum("manaRegen")
+          + (deployedForRegen ? sumEquipmentAffix(deployedForRegen.equipment, "manaRegen") : 0);
         if (manaRegen > 0 && this.state.player.mp < this.effectiveMaxMp()) {
           const maxMp = this.effectiveMaxMp();
           this.state.player = { ...this.state.player, mp: Math.min(maxMp, this.state.player.mp + manaRegen) };
@@ -1016,7 +1040,7 @@ export class Game {
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy: isCrit });
     this.setUnitVfx(target, isCrit ? "flurry" : "slash");
     const dealtDmg = this.applyDamage(battle, target, dmg, isCrit);
-    this.applyLifeSteal(battle, dealtDmg);
+    this.applyLifeSteal(battle, dealtDmg, this.equipmentAffixSum("lifeSteal"));
 
     // Attack Speed affix - a % chance at an immediate follow-up strike on
     // the same target, scoped to the basic Attack only (Skills already
@@ -1029,7 +1053,7 @@ export class Game {
       const extra = this.rollBasicAttack(target);
       this.setUnitVfx(target, extra.isCrit ? "flurry" : "slash");
       const extraDealt = this.applyDamage(battle, target, extra.dmg, extra.isCrit);
-      this.applyLifeSteal(battle, extraDealt);
+      this.applyLifeSteal(battle, extraDealt, this.equipmentAffixSum("lifeSteal"));
     }
 
     this.companionStrike(battle);
@@ -1078,7 +1102,7 @@ export class Game {
       totalDealt += this.applyDamage(battle, target, dmg, isCrit);
       this.clearHitFlagLater(target.uid);
     }
-    this.applyLifeSteal(battle, totalDealt);
+    this.applyLifeSteal(battle, totalDealt, this.equipmentAffixSum("lifeSteal"));
     this.companionStrike(battle);
 
     this.state.battle = battle;
@@ -1152,7 +1176,7 @@ export class Game {
       type: sourceName,
       archetype: ARCHETYPE_BY_RANK[rank],
       power: SHADOW_RANK_POWER[rank],
-      level: 1, xp: 0, loyalty: 0, battlesFought: 0, evolutionStage: 0,
+      level: 1, xp: 0, loyalty: 0, battlesFought: 0, evolutionStage: 0, equipment: {},
       deployed: false
     };
     this.emitFx({ kind: "portal" });
@@ -1185,7 +1209,9 @@ export class Game {
    *  consumed Shadow's name for a confirmation UI, or null if `keepId`
    *  has no duplicate to merge with. ("Convert to Shadow Essence" is
    *  deferred to Crafting, #14 - there's nothing to spend Essence on
-   *  yet.) */
+   *  yet.) Any gear equipped on the consumed Shadow (#7) returns to the
+   *  Bag rather than vanishing with it - merging discards the Shadow, not
+   *  its gear. */
   mergeShadow(keepId: string): { consumedName: string } | null {
     const army = this.state.shadowArmy;
     const keep = army.find((s) => s.id === keepId);
@@ -1199,9 +1225,11 @@ export class Game {
       level: Math.min(SHADOW_MAX_LEVEL, keep.level + Math.max(1, Math.floor(consume.level / 2))),
       loyalty: Math.min(100, keep.loyalty + 10)
     };
+    const returnedGear = Object.values(consume.equipment).filter((item): item is LootItem => !!item);
     this.state.shadowArmy = army
       .filter((s) => s.id !== consume.id)
       .map((s) => (s.id === keepId ? merged : s));
+    if (returnedGear.length > 0) this.state.bag = [...this.state.bag, ...returnedGear];
     this.notify();
     return { consumedName: consume.name };
   }
@@ -1248,6 +1276,60 @@ export class Game {
     this.showGlobalToast(`${shadow.name} evolved into a ${newRank}-Rank Shadow!`, "shadow");
     this.notify();
     return { ok: true, newRank };
+  }
+
+  /** Item #7 of the fixed roadmap - Shadow Management UI. A Shadow's own
+   *  equipment (`ShadowRecord.equipment`), independent of the Hunter's
+   *  `player.equipment` - the exact same Bag/LootItem/ItemSlot system,
+   *  mirroring `equipItem`'s move-from-bag-swap-in-return-previous logic
+   *  exactly (see below) rather than inventing a second itemization
+   *  model. A piece of gear is worn by the Hunter or by one Shadow, never
+   *  both - equipping it here removes it from the shared Bag. */
+  equipShadowItem(shadowId: string, itemId: string) {
+    const idx = this.state.shadowArmy.findIndex((s) => s.id === shadowId);
+    if (idx === -1) return;
+    const item = this.state.bag.find((i) => i.id === itemId);
+    if (!item) return;
+    const shadow = { ...this.state.shadowArmy[idx], equipment: { ...this.state.shadowArmy[idx].equipment } };
+    const previous = shadow.equipment[item.slot];
+    shadow.equipment[item.slot] = item;
+    let bag = this.state.bag.filter((i) => i.id !== itemId);
+    if (previous) bag = [...bag, previous];
+    const army = [...this.state.shadowArmy];
+    army[idx] = shadow;
+    this.state.shadowArmy = army;
+    this.state.bag = bag;
+    this.notify();
+  }
+
+  unequipShadowItem(shadowId: string, slot: ItemSlot) {
+    const idx = this.state.shadowArmy.findIndex((s) => s.id === shadowId);
+    if (idx === -1) return;
+    const shadow = { ...this.state.shadowArmy[idx], equipment: { ...this.state.shadowArmy[idx].equipment } };
+    const item = shadow.equipment[slot];
+    if (!item) return;
+    delete shadow.equipment[slot];
+    const army = [...this.state.shadowArmy];
+    army[idx] = shadow;
+    this.state.shadowArmy = army;
+    this.state.bag = [...this.state.bag, item];
+    this.notify();
+  }
+
+  /** Trims and length-caps (`SHADOW_NAME_MAX_LENGTH`); a blank result after
+   *  trimming is rejected rather than accepted as an empty name. Returns
+   *  whether the rename actually applied, so the UI can tell "you typed
+   *  nothing" apart from "saved". */
+  renameShadow(shadowId: string, name: string): boolean {
+    const trimmed = name.trim().slice(0, SHADOW_NAME_MAX_LENGTH);
+    if (!trimmed) return false;
+    const idx = this.state.shadowArmy.findIndex((s) => s.id === shadowId);
+    if (idx === -1) return false;
+    const army = [...this.state.shadowArmy];
+    army[idx] = { ...army[idx], name: trimmed };
+    this.state.shadowArmy = army;
+    this.notify();
+    return true;
   }
 
   continueAfterWave() {

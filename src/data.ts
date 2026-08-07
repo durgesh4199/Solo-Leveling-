@@ -387,6 +387,22 @@ export function affixDeltaText(d: AffixDelta): string {
   return `${sign}${d.delta} ${d.key.toUpperCase()}`;
 }
 
+/** Sums one affix key across every filled slot of an equipment map. Shared
+ *  by the player's own equipment (`Game.equipmentAffixSum`, store.ts) and
+ *  a Shadow's equipment (`systems/shadows/data.ts`, since #7's Shadow
+ *  gear) so both read the exact same loop instead of two near-identical
+ *  copies quietly drifting apart. */
+export function sumEquipmentAffix(equipment: Partial<Record<ItemSlot, LootItem>>, key: AffixKey): number {
+  let sum = 0;
+  for (const item of Object.values(equipment)) {
+    if (!item) continue;
+    for (const affix of item.affixes) {
+      if (affix.key === key) sum += affix.value;
+    }
+  }
+  return sum;
+}
+
 /** Gold price for a shop-listed item - each affix is normalized back to a
  *  comparable "power" unit (undoing the different per-key scaling
  *  rollAffixValue applies) before pricing, so a piece with two HP/MP

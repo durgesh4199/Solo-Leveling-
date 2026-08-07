@@ -1,5 +1,5 @@
-import type { Archetype, Rank, ShadowRecord } from "../../types";
-import { SHADOW_RANK_POWER } from "../../data";
+import type { Archetype, ItemSlot, LootItem, Rank, ShadowRecord, StatKey } from "../../types";
+import { SHADOW_RANK_POWER, sumEquipmentAffix } from "../../data";
 import type { ShadowSkillSet } from "./types";
 
 /** One passive + one active per archetype, thematically matched to the
@@ -95,18 +95,43 @@ export function shadowXpToNext(level: number): number {
   return Math.round(20 * Math.pow(1.15, level - 1));
 }
 
+const CORE_STATS: StatKey[] = ["str", "agi", "int", "vit", "per"];
+/** How much raw power one point of a core-stat affix is worth on a
+ *  Shadow's own gear (#7 - Shadow equipment slots). Shadows have no
+ *  STR/AGI/INT/VIT/PER of their own to feed the way the Hunter's gear
+ *  does, so a core-stat roll converts straight into power at this fixed
+ *  rate instead - the "no affix ever fully wasted" equivalent of the
+ *  Hunter's effectiveStat pipeline. */
+const POWER_PER_STAT_AFFIX = 0.6;
+
+/** A Shadow's power contribution from its own equipped gear - core-stat
+ *  affixes (see POWER_PER_STAT_AFFIX above). `hp`/`mp` affixes are
+ *  deliberately excluded: a Shadow has no HP/MP pool of its own to
+ *  restore (it never takes damage or spends mana), so those rolls are
+ *  legitimately inert on Shadow-worn gear - the same way a pure-INT item
+ *  is dead weight on a strength build in any itemized RPG, not a bug.
+ *  crit/lifeSteal/attackSpeed/manaRegen/fireDamage are combat-round
+ *  affixes applied directly where they act inside Game.companionStrike,
+ *  mirroring how the Hunter's own gear works (see equipmentAffixSum's
+ *  call sites in store.ts) rather than folding into this raw number. */
+function equipmentPowerBonus(equipment: Partial<Record<ItemSlot, LootItem>>): number {
+  return CORE_STATS.reduce((sum, key) => sum + sumEquipmentAffix(equipment, key), 0) * POWER_PER_STAT_AFFIX;
+}
+
 /** Base rank power + a per-level slice of that same base (higher-rank
  *  Shadows grow faster per level, matching how SHADOW_RANK_POWER already
- *  scales across ranks) + a small, capped Loyalty bonus. This is what
- *  combat and Power Score actually read - `shadow.power` itself stays the
- *  stable Arise-time snapshot, mirroring the player's raw-stat vs
- *  effectiveStat split. */
-export function effectiveShadowPower(shadow: Pick<ShadowRecord, "rank" | "level" | "loyalty">): number {
+ *  scales across ranks) + a small, capped Loyalty bonus + its own
+ *  equipped gear's core-stat contribution (#7). This is what combat and
+ *  Power Score actually read - `shadow.power` itself stays the stable
+ *  Arise-time snapshot, mirroring the player's raw-stat vs effectiveStat
+ *  split. */
+export function effectiveShadowPower(shadow: Pick<ShadowRecord, "rank" | "level" | "loyalty" | "equipment">): number {
   const base = SHADOW_RANK_POWER[shadow.rank];
   const perLevelGrowth = base * 0.08;
   const levelBonus = (shadow.level - 1) * perLevelGrowth;
   const loyaltyBonus = Math.floor(shadow.loyalty / 20);
-  return Math.round(base + levelBonus + loyaltyBonus);
+  const equipmentBonus = equipmentPowerBonus(shadow.equipment);
+  return Math.round(base + levelBonus + loyaltyBonus + equipmentBonus);
 }
 
 const RANK_ORDER: Rank[] = ["E", "D", "C", "B", "A", "S"];
@@ -128,6 +153,11 @@ export function nextShadowRank(rank: Rank): Rank | null {
 export const SHADOW_EVOLUTION_COST: Partial<Record<Rank, number>> = {
   E: 150, D: 400, C: 800, B: 1400, A: 2200
 };
+
+/** Longest name a Shadow can be renamed to (Game.renameShadow) - long
+ *  enough for a real nickname, short enough to never overflow the Shadow
+ *  Army card's name row. */
+export const SHADOW_NAME_MAX_LENGTH = 28;
 
 /** A derived display label, not a separately-tracked/driven stat - there's
  *  no independent "mood" mechanic to invent a driver for (feeding,

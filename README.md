@@ -90,7 +90,13 @@ engine, no external art/font dependencies — built to run on:
   not a stat bump: new archetype, new passive/active skill pair, higher
   power ceiling, level reset to 1 so it keeps growing meaningfully. Its
   name, species, Loyalty, and battle history carry over unchanged; an
-  evolution-count badge on the card marks how many times it's happened
+  evolution-count badge on the card marks how many times it's happened.
+  Each Shadow can also be **renamed** and has its own **Gear** panel - 6
+  equipment slots (weapon, helmet, body armor, legs, ring, amulet), drawn
+  from and returned to your shared Bag, same as your own gear. Core-stat
+  gear boosts its Power directly; Fire Damage, Crit, Life Steal, Attack
+  Speed, and Mana Regen all work on Shadow-worn gear too - a Life Steal
+  ring on your Shadow heals *you*, not the Shadow
 - **Power** — one combined "how strong am I" number, shown on the Title
   screen and prominently on Status: level, every effective stat (gear
   folds in automatically), effective max HP/MP, crit chance, and the
@@ -281,13 +287,14 @@ download the results from the workflow run's **Artifacts** section:
 
 - ~~Persist progress (localStorage save/load) between sessions~~ — done
   (`src/systems/save/`)
+- ~~Shadow Army management (rename, equip gear)~~ — done
+  (`src/screens/shadows.ts`)
 - Real portrait artwork in place of the procedural SVG silhouettes (see
   `ART_ASSETS.md` for the exact file list to supply)
-- Shadow Army management (rename, equip gear, deploy in battle)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Equipment Sets, Talent Trees, Hunter Classes,
-Crafting, Relics, Dungeon Modifiers, Random Events, Promotion Exams, an
+Long-term content roadmap (Talent Trees, Hunter Classes, Crafting, Relics,
+Equipment Sets, Dungeon Modifiers, Random Events, Promotion Exams, an
 Infinite Tower, Daily/Weekly missions, Prestige, combat status effects, and
 more) lives in **`EXPANSION_ROADMAP.md`**, phased so each stays a real,
 working system rather than a stub — Titles, Achievements, and Shadow

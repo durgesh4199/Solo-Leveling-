@@ -246,7 +246,63 @@ touching anything below.
      deducted by the exact tiered cost, loyalty/battlesFought/name/type
      preserved across the transformation, and an unknown id is a graceful
      no-op.
-7. Shadow Management UI — pending.
+7. **Shadow Management UI** — ✅ **Done.** Delivers the two properties #5
+   explicitly deferred to this item: Equipment Slots and a real management
+   UI to work them through, plus renaming (raised in "Known limitations").
+   - **`ShadowRecord.equipment: Partial<Record<ItemSlot, LootItem>>`** -
+     the exact same `LootItem`/`ItemSlot`/Bag system the Hunter's own
+     `player.equipment` already uses, not a second itemization model.
+     `Game.equipShadowItem(shadowId, itemId)` / `unequipShadowItem(shadowId,
+     slot)` mirror `equipItem`/`unequipItem`'s move-from-bag/swap-in/
+     return-previous logic exactly. A piece of gear is worn by the Hunter
+     or by one Shadow, never both - equipping it onto a Shadow pulls it
+     out of the shared Bag.
+   - **Combat integration**: core-stat affixes (STR/AGI/INT/VIT/PER) fold
+     into `effectiveShadowPower()` at a fixed conversion rate (Shadows
+     have no stats of their own to feed the way the Hunter's do) -
+     `POWER_PER_STAT_AFFIX` in `systems/shadows/data.ts`. The four
+     combat-round affixes apply inside `Game.companionStrike` exactly the
+     way the Hunter's own gear works: **Fire Damage** adds flat bonus
+     damage to every strike, **Crit** adds an independent chance at the
+     1.8x multiplier, **Life Steal** heals the *player* off the Shadow's
+     own damage dealt (`applyLifeSteal` generalized to take an explicit
+     `pct` parameter so both the Hunter's gear and a Shadow's gear share
+     one heal implementation), **Attack Speed** grants a chance at one
+     more strike against whatever's still standing after the primary
+     action resolves. **Mana Regen** ticks alongside the Hunter's own at
+     the existing per-round-completion site in `enemyTurn`. `hp`/`mp`
+     affixes are deliberately inert on Shadow gear - a Shadow has no
+     HP/MP pool of its own to restore, a structural fact rather than a
+     deferred feature (documented in code, not silently dropped).
+   - **Rename**: `Game.renameShadow(shadowId, name)` - trims and caps at
+     `SHADOW_NAME_MAX_LENGTH` (28), rejects a blank result. UI is an
+     inline text input replacing the name row (Save/Cancel), not a native
+     `prompt()`, matching every other confirm-style interaction on this
+     screen.
+   - **UI** (`screens/shadows.ts`): a per-card "Manage Gear" toggle
+     expands 6 compact slot rows (icon, filled-item name in its rarity
+     color or "Empty", Equip/Unequip); Equip opens an inline picker of
+     matching-slot Bag items sorted by value, closes itself once one is
+     chosen. A pencil-icon button next to the name opens the rename
+     input. Both follow the established "closure-held view state, redraw
+     on every action" pattern already used for Merge/Evolve confirms.
+   - **Integrity fixes required by adding gear, not optional polish**:
+     `mergeShadow` now returns the *consumed* Shadow's equipped items to
+     the Bag instead of silently deleting them with the Shadow record -
+     gear a player equipped is never destroyed by a merge. `continueSave()`
+     defaults `equipment` to `{}` for saves that predate this field,
+     alongside the existing `evolutionStage` default from #6.
+   - **Shared helper**: `sumEquipmentAffix(equipment, key)` (new, in
+     `data.ts`) replaces `Game.equipmentAffixSum`'s inline loop and is
+     reused by the Shadow-power and companionStrike code above - one
+     implementation for "sum this affix across an equipment map" instead
+     of two copies (Hunter, Shadow) drifting apart.
+   - Verified via a live `Game` instance: equip/unequip/slot-swap (with
+     correct bag round-tripping), power bonus from a core-stat affix
+     matches the documented conversion rate, rename trims/caps/rejects-
+     blank/no-ops-on-unknown-id, merge returns a consumed Shadow's gear to
+     the Bag, and each of fireDamage/crit/lifeSteal/attackSpeed measurably
+     changes `companionStrike`'s behavior when rolled onto Shadow gear.
 
 ### Phase 3 — Character progression
 8. Talent Tree — pending.

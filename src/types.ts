@@ -110,6 +110,15 @@ export interface ShadowRecord {
    *  `loyalty`/`battlesFought` (the Shadow's identity and history) carry
    *  over unchanged across an evolution. */
   evolutionStage: number;
+  /** Gear equipped directly on this Shadow, independent of the Hunter's
+   *  own `PlayerState.equipment` - the same `LootItem`/`ItemSlot` system,
+   *  drawn from and returned to the shared Bag (see Game.equipShadowItem/
+   *  unequipShadowItem in store.ts), so a piece of gear is worn by either
+   *  the Hunter or one Shadow, never both at once. Core-stat affixes fold
+   *  into `effectiveShadowPower()`; the combat-round affixes (crit/
+   *  lifeSteal/attackSpeed/manaRegen/fireDamage) apply directly inside
+   *  Game.companionStrike, mirroring how the Hunter's own gear works. */
+  equipment: Partial<Record<ItemSlot, LootItem>>;
   deployed: boolean;
 }
 

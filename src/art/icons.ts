@@ -25,7 +25,8 @@ const ICONS: Record<string, string> = {
   sparkles: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   trash: '<path d="M5 7h14M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M7 7l1 13a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
   helmet: '<path d="M4 15c0-5.2 3.6-9.5 8-9.5s8 4.3 8 9.5v2H4v-2Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.5 17v2.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 13.5h2.2M12.8 13.5H15" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
-  boots: '<path d="M9 2.5v9.5l-3.7 4.8c-.7.9 0 2.2 1.1 2.2H12a1 1 0 0 0 1-1v-4.5M9 2.5H6.5M9 2.5H11.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M17 2.5v9.5l-3.7 4.8c-.7.9 0 2.2 1.1 2.2H20a1 1 0 0 0 1-1v-4.5M17 2.5h-2.5M17 2.5h2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>'
+  boots: '<path d="M9 2.5v9.5l-3.7 4.8c-.7.9 0 2.2 1.1 2.2H12a1 1 0 0 0 1-1v-4.5M9 2.5H6.5M9 2.5H11.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M17 2.5v9.5l-3.7 4.8c-.7.9 0 2.2 1.1 2.2H20a1 1 0 0 0 1-1v-4.5M17 2.5h-2.5M17 2.5h2.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>',
+  pencil: '<path d="M4 20h4L18.5 9.5a2 2 0 0 0 0-2.8L17.3 5.5a2 2 0 0 0-2.8 0L4 15v5Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13 7.5 16.5 11" stroke="currentColor" stroke-width="1.6"/>'
 };
 
 export function icon(name: keyof typeof ICONS, size = "1em"): string {
