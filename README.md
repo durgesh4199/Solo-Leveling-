@@ -109,8 +109,12 @@ engine, no external art/font dependencies — built to run on:
   sometimes drop bonus gold on a kill and can breathe damage across the
   whole enemy wave at once. A "Merge Duplicate" button on a card with a
   same-species double consumes the weaker copy for levels + Loyalty on
-  the one you keep. Once a Shadow hits max level, **Evolve** it (gold
-  cost, scales with rank) into the next rank tier - a real transformation,
+  the one you keep, or **Disenchant** it entirely for **Shadow Essence**
+  (any Shadow, not just a duplicate) - a permanent, tap-to-confirm trade
+  of the Shadow itself for a Crafting resource scaled to exactly how
+  strong it was, gear it had equipped returned to your Bag first. Once a
+  Shadow hits max level, **Evolve** it (gold cost, scales with rank) into
+  the next rank tier - a real transformation,
   not a stat bump: new archetype, new passive/active skill pair, higher
   power ceiling, level reset to 1 so it keeps growing meaningfully. Its
   name, species, Loyalty, and battle history carry over unchanged; an
@@ -167,15 +171,20 @@ engine, no external art/font dependencies — built to run on:
   top: elite kills, boss kills, buying from the Shop, and **gate rank**
   (E→S) all push the odds up, so an S-rank boss kill has a real shot at
   the top tiers an E-rank trash kill just doesn't
-- **Inventory** — three sub-tabs, each its own menu: **Gear** (a paperdoll
+- **Inventory** — four sub-tabs, each its own menu: **Gear** (a paperdoll
   equipment grid - Amulet/Helmet across the top with Weapon and Ring
   flanking the Hunter, Body Armor and Legs stacked below, connected by
   pathway lines, plus the loot bag with compact slot/rarity filter
   dropdowns and a Default/Rarity/Value/Newest sort), **Shop** (spend gold
   on procedurally-rolled equipable gear; restocks itself for free every 10
   real minutes, or pay to reroll early - both reset the same countdown,
-  shown live on the tab), and **Potions** (the tiered HP/MP consumables,
-  used mid-battle from the Items panel next to Skills). The bag has no
+  shown live on the tab), **Craft** (spend Shadow Essence + gold on
+  **Craft Equipment** - a guaranteed item at a slot you choose, with
+  better rarity odds than the Shop - or **Reforge** an already-equipped
+  item's affixes in place, same slot and rarity, everything else fresh;
+  no confirm step, cost shown right on the button), and **Potions** (the
+  tiered HP/MP consumables, used mid-battle from the Items panel next to
+  Skills). The bag has no
   free discard - selling (a tenth of an item's Shop price) is the only way
   an unwanted piece leaves it, and asks for a tap-to-confirm first so
   nothing sells by accident. Tapping any item in the bag or Shop (not the
@@ -340,9 +349,9 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Crafting, Relics, Equipment Sets, an Infinite
-Tower, Daily/Weekly missions, Prestige, combat status effects, and more)
-lives in **`EXPANSION_ROADMAP.md`**, phased so each stays a real, working
-system rather than a stub — Titles, Achievements, Shadow Evolution, the
-Talent Tree, Hunter Classes, Promotion Exams, Dungeon Modifiers, Random
-Events, and Better Enemy AI above are already ahead of/within that plan.
+Long-term content roadmap (Relics, Equipment Sets, an Infinite Tower,
+Daily/Weekly missions, Prestige, combat status effects, and more) lives in
+**`EXPANSION_ROADMAP.md`**, phased so each stays a real, working system
+rather than a stub — Titles, Achievements, Shadow Evolution, the Talent
+Tree, Hunter Classes, Promotion Exams, Dungeon Modifiers, Random Events,
+Better Enemy AI, and Crafting above are already ahead of/within that plan.

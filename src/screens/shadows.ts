@@ -3,6 +3,7 @@ import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { shadowPortrait } from "../art/portraits";
 import { effectiveShadowPower, shadowMood, shadowXpToNext, nextShadowRank, SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_NAME_MAX_LENGTH, SHADOW_SKILLS } from "../systems/shadows/data";
+import { essenceFromShadow } from "../systems/crafting/data";
 import { RARITY_META, affixText, priceForItem } from "../data";
 import type { ItemSlot, LootItem, Rank, ShadowRecord } from "../types";
 
@@ -49,6 +50,9 @@ export const shadowsScreen: ScreenModule = (root, game) => {
   // item to equip" list - always reset when the panel itself closes or
   // switches to a different Shadow.
   let pickerSlot: ItemSlot | null = null;
+  // Shadow id currently showing its "disenchant for Shadow Essence?"
+  // confirmation (#14) - permanently gives up the Shadow.
+  let disenchantConfirmId: string | null = null;
 
   const selectOption = (value: string, label: string, selected: boolean) =>
     `<option value="${value}" ${selected ? "selected" : ""}>${label}</option>`;
@@ -200,6 +204,20 @@ export const shadowsScreen: ScreenModule = (root, game) => {
         ? `<div style="display:flex;flex-direction:column;padding-top:2px;">${gearRows}</div>`
         : "";
 
+      // Disenchant (#14, Crafting) - a permanent alternative to Merge,
+      // available on any Shadow (not just duplicates) since Shadow
+      // Essence now has something real to spend it on.
+      const disenchanting = disenchantConfirmId === shadow.id;
+      const essenceValue = essenceFromShadow(shadow);
+      const disenchantAction = disenchanting
+        ? `
+          <div style="font-size:11px;color:var(--color-accent-300);text-align:center;">Disenchant for ${essenceValue} Shadow Essence? This Shadow will be lost.</div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="cancel-disenchant">Cancel</button>
+            <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="confirm-disenchant" data-id="${shadow.id}">Confirm</button>
+          </div>`
+        : "";
+
       return `
       <div class="card elev-sm" style="padding:var(--space-3);display:flex;flex-direction:column;gap:var(--space-2); ${shadow.deployed ? "box-shadow:0 0 0 1.5px var(--color-accent-400);" : ""}">
         <div style="width:100%;height:80px;border-radius:8px;overflow:hidden;position:relative;" class="lighten">
@@ -232,21 +250,26 @@ export const shadowsScreen: ScreenModule = (root, game) => {
             ${shadow.deployed ? "Recall" : "Deploy"}
           </button>
           <button class="btn ${gearOpen ? "btn-primary" : "btn-secondary"} action-btn" style="padding:6px 8px;font-size:12px;" data-action="toggle-gear" data-id="${shadow.id}" title="Manage Gear">${icon("bag")}</button>
+          <button class="btn btn-secondary action-btn" style="padding:6px 8px;font-size:12px;" data-action="disenchant-shadow" data-id="${shadow.id}" title="Disenchant for ${essenceValue} Shadow Essence">${icon("flame")}</button>
         </div>
         ${gearPanel}
         ${mergeAction}
         ${evolveAction}
+        ${disenchantAction}
       </div>
     `;
     }).join("");
 
     root.innerHTML = `
       <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
-        <div>
-          <h4 style="margin-bottom:var(--space-1);">Shadow Army</h4>
-          <div style="font-size:13px;color:var(--color-neutral-400);">
-            ${shadowArmy.length} shadows arisen${deployed ? ` · <span style="color:var(--color-accent-300);">${deployed.name} deployed</span>` : ""}
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-2);">
+          <div>
+            <h4 style="margin-bottom:var(--space-1);">Shadow Army</h4>
+            <div style="font-size:13px;color:var(--color-neutral-400);">
+              ${shadowArmy.length} shadows arisen${deployed ? ` · <span style="color:var(--color-accent-300);">${deployed.name} deployed</span>` : ""}
+            </div>
           </div>
+          <div class="tag tag-outline" style="flex-shrink:0;display:flex;align-items:center;gap:4px;" title="Shadow Essence - spend it in Inventory's Craft tab">${icon("flame")} ${game.state.player.shadowEssence}</div>
         </div>
         ${filters}
         ${empty}
@@ -315,6 +338,15 @@ export const shadowsScreen: ScreenModule = (root, game) => {
     });
     root.querySelectorAll<HTMLElement>('[data-action="unequip-shadow-item"]').forEach((el) => {
       el.addEventListener("click", () => game.unequipShadowItem(el.dataset.id!, el.dataset.slot as ItemSlot));
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="disenchant-shadow"]').forEach((el) => {
+      el.addEventListener("click", () => { disenchantConfirmId = el.dataset.id!; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="cancel-disenchant"]').forEach((el) => {
+      el.addEventListener("click", () => { disenchantConfirmId = null; draw(); });
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="confirm-disenchant"]').forEach((el) => {
+      el.addEventListener("click", () => { game.disenchantShadow(el.dataset.id!); disenchantConfirmId = null; draw(); });
     });
     root.querySelectorAll<HTMLSelectElement>("[data-filter]").forEach((el) => {
       el.addEventListener("change", () => {

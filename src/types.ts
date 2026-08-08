@@ -57,6 +57,14 @@ export interface PlayerState {
    *  instead, so an existing character keeps the rank their level
    *  already implied rather than being knocked back to E. */
   rank: Rank;
+  /** Crafting material (#14) earned by disenchanting a Shadow
+   *  (Game.disenchantShadow) and spent on Craft Equipment/Reforge
+   *  (systems/crafting/). A genuinely falsy-safe default (0), unlike
+   *  `rank` above - `continueSave()` still backfills it explicitly
+   *  (`saved.player.shadowEssence ?? 0`) since it's read in arithmetic
+   *  everywhere, where a bare `undefined` would silently produce `NaN`
+   *  instead of a safe no-op the way `hunterClass`'s `null` check does. */
+  shadowEssence: number;
 }
 
 export interface GateDef {

@@ -319,9 +319,14 @@ function rollAffixValue(key: AffixKey, rankPower: number, statMult: number): num
 
 /** Generates a fully-named, ready-to-equip item with 1-4 random affixes
  *  (see AFFIX_COUNT_BY_RARITY) - `rank` sets the power budget, `rarity`
- *  scales it and how many rolls the item gets. */
-export function generateLoot(rank: Rank, rarity: ItemRarity): LootItem {
-  const slot = pick<ItemSlot>(["weapon", "helmet", "chest", "legs", "ring", "amulet"]);
+ *  scales it and how many rolls the item gets. `forcedSlot` (#14,
+ *  Crafting) pins the slot instead of picking one at random - Craft
+ *  Equipment needs to build a chosen slot, and Reforge needs to keep an
+ *  existing item's slot fixed while everything else about it rerolls -
+ *  every existing caller omits it and gets the original random-slot
+ *  behavior unchanged. */
+export function generateLoot(rank: Rank, rarity: ItemRarity, forcedSlot?: ItemSlot): LootItem {
+  const slot = forcedSlot ?? pick<ItemSlot>(["weapon", "helmet", "chest", "legs", "ring", "amulet"]);
   const rankPower = 3 + RANK_INDEX[rank] * 2;
   const affixCount = AFFIX_COUNT_BY_RARITY[rarity];
   const pool = [...AFFIX_POOL];

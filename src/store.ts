@@ -15,6 +15,7 @@ import type { HunterClassDef } from "./systems/classes/types";
 import { EXAM_GATE_ID, PROMOTION_REWARD, examEligibleRank as computeExamEligibleRank, nextRank } from "./systems/exams/data";
 import { RANDOM_EVENT_RANK_MULT, rollRandomEvent } from "./systems/events/data";
 import type { RandomEventDef } from "./systems/events/types";
+import { CRAFT_EQUIPMENT_COST, CRAFT_RARITY_BONUS, REFORGE_COST_BY_RARITY, essenceFromShadow } from "./systems/crafting/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -42,7 +43,7 @@ const INITIAL_STATE: GameState = {
     name: "Hunter", level: 1, xp: 0, xpToNext: 80,
     hp: 100, maxHp: 100, mp: 30, maxMp: 30,
     statPoints: 0, str: 10, agi: 10, int: 10, vit: 10, per: 10,
-    gold: 0, equipment: {}, hunterClass: null, rank: "E"
+    gold: 0, equipment: {}, hunterClass: null, rank: "E", shadowEssence: 0
   },
   gatesCleared: {},
   shadowArmy: [],
@@ -267,7 +268,14 @@ export class Game {
       // no meaningful falsy state, so it's backfilled from the Hunter's
       // current level rather than defaulting to a bare "E" that would
       // wrongly demote an already-leveled character.
-      player: { ...saved.player, rank: saved.player.rank ?? rankForLevel(saved.player.level) },
+      player: {
+        ...saved.player,
+        rank: saved.player.rank ?? rankForLevel(saved.player.level),
+        // Older saves predate Shadow Essence (#14) - a real numeric
+        // default (0), not a safe-falsy field like hunterClass, since
+        // it's read in arithmetic everywhere Crafting touches it.
+        shadowEssence: saved.player.shadowEssence ?? 0
+      },
       gatesCleared: saved.gatesCleared,
       // Older saves predate evolutionStage (#6) and equipment (#7) -
       // default them rather than leaving them undefined on a record read
@@ -1608,6 +1616,28 @@ export class Game {
     return true;
   }
 
+  /** Item #14 of the fixed roadmap - Crafting. Permanently gives up a
+   *  Shadow for Shadow Essence (`essenceFromShadow`, systems/crafting/
+   *  data.ts) - fulfills the "Convert duplicates to Shadow Essence"
+   *  property #5 deferred to this item, but isn't limited to duplicates
+   *  the way Merge is (see essenceFromShadow's doc comment for why).
+   *  Any equipped gear on the disenchanted Shadow returns to the Bag
+   *  first, same as a merge-consumed Shadow's gear already does - giving
+   *  up a Shadow should never quietly destroy the gear on it. Returns
+   *  the Essence earned, or null if `shadowId` doesn't exist. */
+  disenchantShadow(shadowId: string): number | null {
+    const idx = this.state.shadowArmy.findIndex((s) => s.id === shadowId);
+    if (idx === -1) return null;
+    const shadow = this.state.shadowArmy[idx];
+    const essence = essenceFromShadow(shadow);
+    const returnedGear = Object.values(shadow.equipment).filter((item): item is LootItem => !!item);
+    this.state.shadowArmy = this.state.shadowArmy.filter((s) => s.id !== shadowId);
+    if (returnedGear.length > 0) this.state.bag = [...this.state.bag, ...returnedGear];
+    this.state.player = { ...this.state.player, shadowEssence: this.state.player.shadowEssence + essence };
+    this.notify();
+    return essence;
+  }
+
   continueAfterWave() {
     const battle = this.state.battle;
     if (!battle) return;
@@ -1703,6 +1733,56 @@ export class Game {
     this.state.player = { ...this.state.player, gold: this.state.player.gold + price };
     this.state.bag = this.state.bag.filter((i) => i.id !== itemId);
     this.notify();
+  }
+
+  /** Crafts a guaranteed item at a chosen slot for Shadow Essence + gold
+   *  (`CRAFT_EQUIPMENT_COST`, keyed by the Hunter's own confirmed rank,
+   *  #10) - a better rarity bet than a Shop reroll (`CRAFT_RARITY_BONUS`
+   *  > the Shop's own bonus), since it costs a real material, not just
+   *  gold. Returns the crafted item, or null if either cost can't be
+   *  paid (no state mutation on rejection). */
+  craftEquipment(slot: ItemSlot): LootItem | null {
+    const cost = CRAFT_EQUIPMENT_COST[this.state.player.rank];
+    if (this.state.player.shadowEssence < cost.essence || this.state.player.gold < cost.gold) return null;
+    const rarity = rollRarity(CRAFT_RARITY_BONUS + rankRarityBonus(this.state.player.rank));
+    const item = generateLoot(this.state.player.rank, rarity, slot);
+    this.state.player = {
+      ...this.state.player,
+      shadowEssence: this.state.player.shadowEssence - cost.essence,
+      gold: this.state.player.gold - cost.gold
+    };
+    this.state.bag = [...this.state.bag, item];
+    this.notify();
+    return item;
+  }
+
+  /** Rerolls an *equipped* item's affixes in place - same slot and
+   *  rarity, everything else (name, affix keys/values) freshly rolled.
+   *  Cost is keyed by the item's own rarity (`REFORGE_COST_BY_RARITY`),
+   *  not the Hunter's rank - a higher-rarity item has more to reroll
+   *  regardless of what rank the Hunter is now. Scoped to equipped gear
+   *  only (not the Bag) - "improve what I'm already wearing" is the
+   *  actual use case; a Bag item can be equipped first if it needs this.
+   *  Swaps the item in place rather than round-tripping through the Bag,
+   *  and re-clamps HP/MP the same way equipItem/unequipItem already do,
+   *  since the reforged affixes can change max HP/MP. Returns the
+   *  reforged item, or null if the slot is empty or either cost can't be
+   *  paid (no state mutation on rejection). */
+  reforgeEquippedItem(slot: ItemSlot): LootItem | null {
+    const current = this.state.player.equipment[slot];
+    if (!current) return null;
+    const cost = REFORGE_COST_BY_RARITY[current.rarity];
+    if (this.state.player.shadowEssence < cost.essence || this.state.player.gold < cost.gold) return null;
+    const reforged = generateLoot(this.state.player.rank, current.rarity, slot);
+    this.state.player = {
+      ...this.state.player,
+      shadowEssence: this.state.player.shadowEssence - cost.essence,
+      gold: this.state.player.gold - cost.gold,
+      equipment: { ...this.state.player.equipment, [slot]: reforged }
+    };
+    this.clampVitals();
+    this.notify();
+    return reforged;
   }
 
   /** Rerolls the Shop's equipment stock at the player's *confirmed* rank

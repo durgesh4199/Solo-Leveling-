@@ -147,10 +147,11 @@ touching anything below.
      milestone. Revisit once/if a cooldown mechanic exists (Talent Tree
      or a combat-depth item are the more natural homes for that).
    - **Sockets** are empty affix slots meant to be filled by a Crafting
-     gem (#14, not yet built). Adding an empty, currently-unfillable
-     socket now would itself be the textbook placeholder the standing
-     rules forbid. Build this when Crafting exists to give it something
-     to do.
+     gem. Crafting itself now exists (#14), but as Craft Equipment/
+     Reforge/Shadow Essence, not a gem-item type - sockets are still
+     unbuilt and remain deferred to whichever future item introduces a
+     real gem. Adding an empty, currently-unfillable socket now would
+     still be the textbook placeholder the standing rules forbid.
 
 ### Phase 2 — Shadows
 5. **Shadow Collection** — ✅ **Done** (scoped - see deferrals below).
@@ -201,10 +202,12 @@ touching anything below.
    - **Evolution Stage** - is #6 (Shadow Evolution) by name; adding an
      `evolutionStage` field now with nothing to change it would be inert
      - the textbook placeholder the standing rules forbid.
-   - **Convert duplicates to Shadow Essence** - Essence is a Crafting
-     material (#14, not built); a currency with nothing to spend it on
-     yet is the same placeholder problem. Merge (above) is the working
-     duplicate-handling path until Crafting exists.
+   - **Convert duplicates to Shadow Essence** - delivered in #14
+     (`Game.disenchantShadow`), and deliberately broadened past the
+     original "duplicates only" framing once Crafting gave Essence
+     something real to buy: any owned Shadow can be disenchanted, not
+     just spare copies. Merge (above) remains the separate
+     duplicates-only path for when you'd rather keep the fighting power.
 6. **Shadow Evolution** — ✅ **Done.** `ShadowRecord` gained `evolutionStage`
    (0 = original Arise form). Evolving a fully-leveled Shadow (`level ===
    SHADOW_MAX_LEVEL`) advances it to the next rank tier - deliberately
@@ -596,7 +599,74 @@ touching anything below.
       ordinary special text instead of repeating it.
 
 ### Phase 5 — Itemization depth
-14. Crafting — pending.
+14. **Crafting** — ✅ **Done.** New `src/systems/crafting/` and a new
+    player-scoped resource, `PlayerState.shadowEssence`, earned exactly one
+    way: disenchanting a Shadow (`Game.disenchantShadow`). This is the
+    "Convert duplicates to Shadow Essence" property deferred from #5 back
+    when Essence had nothing to spend on - it's deliberately **not**
+    limited to duplicates now that Crafting exists to give it a purpose;
+    any owned Shadow can be disenchanted, Merge (duplicates-only) stays
+    the separate, still-useful "keep fighting power, lose the copy" path.
+    - **`essenceFromShadow`** derives the payout from the exact same
+      `effectiveShadowPower()` combat/Power-Score formula every other
+      Shadow-strength read already uses (rank + level + loyalty + its own
+      equipped gear), not a second, independently-tuned number that could
+      drift out of sync - a strong Shadow is worth more Essence for the
+      same reason it's worth more in a fight. Any gear the disenchanted
+      Shadow had equipped returns to the Bag first, same as Merge already
+      does; only the Shadow record itself is lost.
+    - **Craft Equipment** (`Game.craftEquipment`, new Craft sub-tab in
+      Inventory) - spends Essence + gold for a *guaranteed* item at a
+      slot the player picks, at their confirmed rank (#10). Reuses
+      `generateLoot` unchanged except for one new optional 3rd parameter,
+      `forcedSlot` - when omitted, `generateLoot` still rolls a random
+      slot exactly as it always has (verified as an explicit regression
+      case), so every pre-#14 call site (Shop stock, gate loot drops,
+      Random Events' Hidden Cache) is untouched. Craft Equipment's rarity
+      roll uses a bigger bonus (`CRAFT_RARITY_BONUS = 0.15`) than the
+      Shop's own reroll bonus (0.05) - it costs real Essence, not just
+      gold, so it needs to be a meaningfully better bet than another Shop
+      reroll rather than a slower way to buy the same odds.
+    - **Reforge** (`Game.reforgeEquippedItem`, same Craft sub-tab) -
+      rerolls an *equipped* item's affixes in place, keeping its slot and
+      rarity fixed and generating everything else fresh via the same
+      `generateLoot(rank, item.rarity, slot)` call. Costed by the item's
+      *own* rarity (`REFORGE_COST_BY_RARITY`), not the Hunter's rank - a
+      higher-rarity item has more affixes to reroll regardless of what
+      rank the Hunter currently is. Calls the existing `clampVitals()`
+      afterward for consistency with every other equipment-mutating path,
+      even though a reforge can't itself put HP/MP out of bounds.
+    - **No confirm step on either action** - both are "spend for an
+      outcome" purchases costed directly on their button, the same
+      pattern the Shop's buy button already uses, not a permanent-choice
+      confirm like Merge/Evolve/Disenchant (which does get one, since
+      disenchanting is irreversible and loses the Shadow outright).
+    - **Sockets remain deferred** - the #4 affix system still doesn't have
+      a "Crafting gem" to fill an empty socket with, and this item didn't
+      introduce one; sockets stay scoped to whichever future item adds a
+      real gem-item type; nothing new here changes that plan.
+    - New save-migration case, the third and most restrictive of the
+      three now-documented patterns: `shadowEssence` is a **new field on
+      an already-persisted object with no safe falsy default**, since it
+      participates directly in arithmetic (cost comparisons, subtraction)
+      where `undefined` would silently produce `NaN` rather than reading
+      as "none yet" the way `hunterClass: null` safely does - so
+      `continueSave()` explicitly backfills it to `0` for any save from
+      before this item, exactly the same shape as the `rank` backfill
+      added in #10.
+    - Verified via a live `Game` instance: `essenceFromShadow`'s formula
+      and its floor-at-1 minimum, `disenchantShadow` (correct essence
+      payout, army removal, gear returned to Bag, unknown-id no-op),
+      `craftEquipment` (affordable case producing the forced slot and
+      deducting both currencies, essence-short and gold-short rejections
+      each leaving state untouched, a second slot to confirm the force
+      isn't hardcoded to one), `reforgeEquippedItem` (in-place equipment
+      swap keeping slot/rarity, cost deduction, empty-slot rejection,
+      insufficient-funds rejection leaving the original item untouched,
+      HP staying in bounds afterward), `generateLoot`'s new `forcedSlot`
+      parameter both with and without an argument (confirming omission
+      still randomizes, exactly matching pre-#14 behavior), and the
+      `continueSave()` backfill for a save missing `shadowEssence`.
 15. Relics — pending.
 16. Equipment Sets — pending.
 

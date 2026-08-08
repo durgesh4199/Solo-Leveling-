@@ -3,6 +3,7 @@ import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { hunterPortrait } from "../art/portraits";
 import { POTIONS, RARITY_META, affixDeltaText, affixText, compareItemAffixes, priceForItem, sellPriceForItem } from "../data";
+import { CRAFT_EQUIPMENT_COST, REFORGE_COST_BY_RARITY } from "../systems/crafting/data";
 import type { ItemRarity, ItemSlot, LootItem } from "../types";
 
 const SLOT_LABEL: Record<ItemSlot, string> = {
@@ -27,7 +28,7 @@ const PAPERDOLL_POS: Record<ItemSlot, string> = {
 };
 const SLOT_ORDER: ItemSlot[] = ["weapon", "helmet", "chest", "legs", "ring", "amulet"];
 const RARITY_ORDER: ItemRarity[] = ["common", "uncommon", "rare", "epic", "legendary", "mythic", "godly"];
-type SubTab = "gear" | "shop" | "potions";
+type SubTab = "gear" | "shop" | "potions" | "craft";
 type SortBy = "default" | "rarity" | "value" | "newest";
 const SORT_LABEL: Record<SortBy, string> = {
   default: "Sort: Default", rarity: "Sort: Rarity", value: "Sort: Value", newest: "Sort: Newest"
@@ -257,6 +258,67 @@ export const inventoryScreen: ScreenModule = (root, game) => {
     `;
   };
 
+  /** Crafting (#14) - Craft Equipment (guaranteed item at a chosen slot,
+   *  better rarity odds than the Shop) and Reforge (reroll an *equipped*
+   *  item's affixes in place, same slot/rarity). Both spend Shadow
+   *  Essence (earned by disenchanting Shadows - see the Shadow Army
+   *  screen) plus gold, no confirm step - same "cost is right on the
+   *  button, click to commit" pattern the Shop's own buy button already
+   *  uses, not a permanent-choice confirm like Merge/Evolve/Disenchant. */
+  const drawCraft = (p: Game["state"]["player"]) => {
+    const equipCost = CRAFT_EQUIPMENT_COST[p.rank];
+    const craftRows = SLOT_ORDER.map((slot) => {
+      const canAfford = p.shadowEssence >= equipCost.essence && p.gold >= equipCost.gold;
+      return `
+        <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);">
+          <span style="font-size:18px;color:var(--color-accent-300);flex-shrink:0;">${icon(SLOT_ICON[slot] as any)}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:500;">${SLOT_LABEL[slot]}</div>
+            <div style="font-size:11px;color:var(--color-neutral-500);">Guaranteed ${p.rank}-Rank gear, better rarity odds than the Shop</div>
+          </div>
+          <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:6px 10px;font-size:11px;white-space:nowrap;" data-action="craft-equipment" data-slot="${slot}" ${canAfford ? "" : "disabled"}>
+            ${icon("flame")} ${equipCost.essence} · ${icon("coin")} ${equipCost.gold}g
+          </button>
+        </div>`;
+    }).join("");
+
+    const equippedSlots = SLOT_ORDER.filter((s) => p.equipment[s]);
+    const reforgeRows = equippedSlots.length === 0
+      ? `<div style="font-size:12px;color:var(--color-neutral-600);padding:var(--space-3) 0;">Equip something first - Reforge only works on gear you're wearing.</div>`
+      : equippedSlots.map((slot) => {
+        const item = p.equipment[slot]!;
+        const meta = RARITY_META[item.rarity];
+        const cost = REFORGE_COST_BY_RARITY[item.rarity];
+        const canAfford = p.shadowEssence >= cost.essence && p.gold >= cost.gold;
+        return `
+          <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid var(--color-neutral-800);border-radius:var(--radius-md);">
+            <span style="font-size:18px;color:${meta.color};flex-shrink:0;">${icon(item.icon as any)}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px;flex-wrap:wrap;">
+                ${rarityTag(item)}<span style="font-size:11px;color:var(--color-neutral-500);">${SLOT_LABEL[slot]} · rerolls all affixes</span>
+              </div>
+            </div>
+            <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:6px 10px;font-size:11px;white-space:nowrap;" data-action="reforge-item" data-slot="${slot}" ${canAfford ? "" : "disabled"}>
+              ${icon("flame")} ${cost.essence} · ${icon("coin")} ${cost.gold}g
+            </button>
+          </div>`;
+      }).join("");
+
+    return `
+      <div>
+        <h5 style="margin:0;">Craft Equipment</h5>
+        <div style="font-size:11px;color:var(--color-neutral-500);margin-top:2px;">Spend Shadow Essence + gold on a guaranteed item at the slot you choose.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:var(--space-2);">${craftRows}</div>
+      <div>
+        <h5 style="margin:0;">Reforge</h5>
+        <div style="font-size:11px;color:var(--color-neutral-500);margin-top:2px;">Reroll an equipped item's affixes - same slot and rarity, everything else fresh.</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:var(--space-2);">${reforgeRows}</div>
+    `;
+  };
+
   const tickCountdown = () => {
     const el = root.querySelector<HTMLElement>("#shop-countdown");
     if (!el) return;
@@ -266,7 +328,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
   const draw = () => {
     if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
     const p = game.state.player;
-    const body = subTab === "gear" ? drawGear(p) : subTab === "shop" ? drawShop(p) : drawPotions(p);
+    const body = subTab === "gear" ? drawGear(p) : subTab === "shop" ? drawShop(p) : subTab === "craft" ? drawCraft(p) : drawPotions(p);
 
     root.innerHTML = `
       <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
@@ -275,11 +337,15 @@ export const inventoryScreen: ScreenModule = (root, game) => {
             <h4 style="margin-bottom:var(--space-1);">Inventory</h4>
             <div style="font-size:13px;color:var(--color-neutral-400);">Equipment, loot, and consumables</div>
           </div>
-          <div class="tag tag-outline" style="display:flex;align-items:center;gap:4px;">${icon("coin")} ${p.gold}</div>
+          <div style="display:flex;gap:6px;">
+            <div class="tag tag-outline" style="display:flex;align-items:center;gap:4px;" title="Shadow Essence">${icon("flame")} ${p.shadowEssence}</div>
+            <div class="tag tag-outline" style="display:flex;align-items:center;gap:4px;">${icon("coin")} ${p.gold}</div>
+          </div>
         </div>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${subTabBtn("gear", "Gear", "bag")}
           ${subTabBtn("shop", "Shop", "coin")}
+          ${subTabBtn("craft", "Craft", "flame")}
           ${subTabBtn("potions", "Potions", "flask")}
         </div>
         <div style="display:flex;flex-direction:column;gap:var(--space-4);">${body}</div>
@@ -318,6 +384,12 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       el.addEventListener("click", () => { comparingId = null; game.buyShopItem(el.dataset.item!); });
     });
     root.querySelector<HTMLElement>('[data-action="reroll-shop"]')?.addEventListener("click", () => game.rerollShop());
+    root.querySelectorAll<HTMLElement>('[data-action="craft-equipment"]').forEach((el) => {
+      el.addEventListener("click", () => game.craftEquipment(el.dataset.slot as ItemSlot));
+    });
+    root.querySelectorAll<HTMLElement>('[data-action="reforge-item"]').forEach((el) => {
+      el.addEventListener("click", () => game.reforgeEquippedItem(el.dataset.slot as ItemSlot));
+    });
     root.querySelectorAll<HTMLSelectElement>("[data-filter]").forEach((el) => {
       el.addEventListener("change", () => {
         const kind = el.dataset.filter;

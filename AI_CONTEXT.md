@@ -770,6 +770,65 @@ pulses gold whenever it increases).
   first `setTimeout` ever fires, so `g["enemyTurn"](battle)` followed by
   reading `g.state.battle.toast`/`.bossEnraged` needs no polling.
 
+## Crafting (Phase 5 item #14 of EXPANSION_ROADMAP.md)
+
+- **New module, `src/systems/crafting/data.ts`** - `essenceFromShadow`,
+  `CRAFT_EQUIPMENT_COST` (by `Rank`), `REFORGE_COST_BY_RARITY` (by
+  `ItemRarity`), `CRAFT_RARITY_BONUS`. No `types.ts` for this system - a
+  `CraftCost` interface is small enough to live in `data.ts` directly,
+  same call made for `systems/exams/`.
+- **`PlayerState.shadowEssence: number`** - a new player-scoped resource,
+  earned exactly one way (`Game.disenchantShadow`) and spent two ways
+  (`Game.craftEquipment`, `Game.reforgeEquippedItem`). Third save-
+  migration pattern (see "Meta-progression" below): a new field with no
+  safe falsy default, since it's read in arithmetic - `continueSave()`
+  backfills it to `0` explicitly.
+- **`essenceFromShadow` reuses `effectiveShadowPower()` directly** rather
+  than inventing a second strength formula - `Math.round(power * 0.4)`,
+  floored at 1. A Shadow's Essence value already tracks rank + level +
+  loyalty + its own gear for free, and can never silently drift out of
+  sync with what that same Shadow is worth in combat/Power Score.
+- **`Game.disenchantShadow(shadowId)`** - removes the Shadow from
+  `shadowArmy`, returns any gear it had equipped to the Bag (same as
+  Merge already does), awards the Essence, returns the amount awarded (or
+  `null` for an unknown id). Not limited to duplicates - Merge (#5) stays
+  the separate "keep the fighting power, lose the copy" path; Disenchant
+  is "give up the Shadow outright for a resource." UI: a flame-icon
+  button on every Shadow Army card, gated behind the same inline Cancel/
+  Confirm pattern every other permanent-choice action uses (never
+  `window.confirm` - blocked in the sandboxed Artifact iframe, see the
+  Title screen note below).
+- **`generateLoot` gained one new optional 3rd parameter, `forcedSlot`**
+  (`src/data.ts`) - when passed, the item generates at that exact slot
+  instead of rolling one randomly; when omitted, behavior is pixel-
+  identical to every pre-#14 call site (Shop stock, gate loot drops,
+  Random Events' Hidden Cache all still call it with 2 arguments,
+  untouched). This one signature change is what both new Crafting
+  actions below are built on, rather than duplicating loot-generation
+  logic.
+- **`Game.craftEquipment(slot)`** - spends `CRAFT_EQUIPMENT_COST[player
+  .rank]` (Essence + gold, confirmed rank per #10) for a guaranteed item
+  at the chosen slot, rolled at `CRAFT_RARITY_BONUS` (0.15) - a bigger
+  rarity bonus than the Shop's own reroll (0.05), since it costs real
+  Essence and should be a meaningfully better bet than another Shop
+  reroll. Returns `null` (no mutation) if either currency is short.
+- **`Game.reforgeEquippedItem(slot)`** - rerolls the *equipped* item at
+  that slot in place: same slot and rarity, every affix freshly rolled
+  via `generateLoot(player.rank, current.rarity, slot)`. Costed by the
+  *item's own* rarity (`REFORGE_COST_BY_RARITY`), not the Hunter's rank -
+  a legendary item costs more to reforge than a common one regardless of
+  what rank the Hunter currently is. Returns `null` if the slot is empty
+  or either currency is short; calls `clampVitals()` afterward for
+  consistency with every other equipment-mutating path.
+- **Both Craft actions live in a new "Craft" sub-tab in Inventory**
+  (`drawCraft`, `screens/inventory.ts`) - no confirm step, cost shown
+  directly on the button, same "spend for an outcome" pattern the Shop's
+  buy button already uses (as opposed to Disenchant/Merge/Evolve, which
+  are irreversible identity changes and do get a confirm step).
+- **Sockets are still deferred** - Crafting existing now doesn't by
+  itself deliver a gem-item type to fill a socket with; that's still a
+  separate, unbuilt future addition to the #4 affix system.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -845,7 +904,7 @@ Arise, level-up, dissolve).
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
   Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers ✅ →
-  Random Events ✅ → Better Enemy AI ✅ → Crafting → Relics → Equipment
+  Random Events ✅ → Better Enemy AI ✅ → Crafting ✅ → Relics → Equipment
   Sets → Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always
   check that file for current status before starting any expansion work -
   **do not start the next item without an explicit go-ahead**, and do
