@@ -132,6 +132,11 @@ level has raced ahead of confirmed rank (`Game.examEligibleRank()`) - a
 single, tougher solo boss trial, not one of the 20 explorable gates (see
 "Promotion Exams" below).
 
+Every wave-to-wave transition (`Game.advanceWave`) has a ~25% chance of a
+**Random Event** (#12) - gold, bonus loot, a partial heal, a bonus enemy
+joining the wave, or a small risk/reward HP-for-gold trade - see "Random
+Events" below.
+
 **Battle** — turn-based, auto-targets the frontmost living enemy
 (indicated by an underline on its name label, not the old portrait-edge
 line which used to visually collide with the name once per-unit labels
@@ -661,6 +666,59 @@ pulses gold whenever it increases).
   picking a gate with non-zero `baseDef` for def-mult tests - `g1`'s is
   literally `0`, which makes `0 === 0 * 2` pass without proving anything.
 
+## Random Events (Phase 4 item #12 of EXPANSION_ROADMAP.md)
+
+- **`src/systems/events/`** - `RandomEventDef`/`RandomEventEffect` (a
+  discriminated union, same shape-language as `TalentBonus`/`ClassBonus`)
+  in `types.ts`; the 5-entry weighted pool, `rollRandomEvent`, and
+  `RANDOM_EVENT_RANK_MULT` in `data.ts`. `rollRandomEvent(nextWaveIsBoss)`
+  does two things in one call: the ~25% "does anything happen at all"
+  gate, then (if it passed) a weighted pick from a pool that's filtered
+  to exclude `ambush` when `nextWaveIsBoss` is true.
+- **All effects are instant, none have a duration** - this is a
+  deliberate scope boundary, not an oversight. A temporary stat buff/
+  debuff needs a real duration-tracking mechanic (which combat status
+  effects, itself unbuilt, would be the actual home for) - so every
+  event here is a one-shot state change instead: gold, one bonus loot
+  item, a %-of-missing HP/MP heal, or one bonus enemy. Don't extend this
+  pool with a "for N rounds" effect without first building that
+  mechanic as its own thing.
+- **`Game.applyRandomEvent`** (private, store.ts) is where each
+  `RandomEventEffect` kind's actual numbers get applied - a plain
+  switch, one case per kind, each ending in a `showGlobalToast(...,
+  "event")` announcement. The `"ambush"` case is intentionally a near-
+  no-op there (just the toast) - the actual enemy gets appended by the
+  *caller*, since only `Game.advanceWave` has the freshly-generated
+  `enemies` array in scope for the wave about to start.
+- **`Game.makeTrashUnit`** (new, extracted from `makeEnemies`) is what
+  makes the Ambush unit possible without a second copy of the trash-
+  stat-roll formula: `makeEnemies`'s per-unit loop and `advanceWave`'s
+  ambush branch both call it now, the latter with `forceElite: true` and
+  pinned to `trashCount - 1` (the hardest position in the gate's ramp) so
+  an Ambush unit is a real, noticeably tougher threat, not a coin-flip
+  trash reskin. This is the one working-code refactor #12 required (not
+  optional polish) - re-verify anything that touches trash-unit
+  generation against #11's existing modifier tests too, since this
+  function is now shared by both systems.
+- **New counter**: `COUNTER_KEYS.randomEventsTriggered`
+  (`"randomEvents.total"`) increments once per event that actually
+  fires (not per `advanceWave` call) - a real Progress-system
+  integration, there for a future "Encounter N Random Events" Title/
+  Achievement to key off, the same as every other lifetime counter.
+- **Testing note**: a weighted/probabilistic system like this needs
+  statistical assertions, not single-sample ones - e.g. confirming
+  Ambush can occur off a non-boss transition and never occurs into a
+  boss one needs ~2000 trials checking "was it ever seen", and
+  confirming the ~25% trigger rate against the real integrated
+  `advanceWave()` path (not just `rollRandomEvent` in isolation) needs
+  hundreds of trials with a tolerance band (`0.15 < rate < 0.35`), not an
+  exact-percentage assertion. `g["advanceWave"]()` (bracket access, same
+  pattern as every other private-method test in this codebase) with a
+  hand-built `battle` object (`result: "wave-clear"`, a real multi-wave
+  gate id, `modifier` already set so `rollGateModifier` never gets
+  consulted) is how to drive the integrated path directly without
+  needing a live `battleAttack()`/kill sequence first.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -736,12 +794,11 @@ Arise, level-up, dissolve).
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
   Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers ✅ →
-  Random Events → Better Enemy AI → Crafting → Relics → Equipment Sets →
-  Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always check
-  that file for current status before starting any expansion work -
+  Random Events ✅ → Better Enemy AI → Crafting → Relics → Equipment
+  Sets → Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always
+  check that file for current status before starting any expansion work -
   **do not start the next item without an explicit go-ahead**, and do
-  not reorder or batch
-  items.
+  not reorder or batch items.
 
 ## Workflow notes for whoever picks this up next
 

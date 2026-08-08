@@ -13,6 +13,8 @@ import { TALENT_POINTS_PER_LEVEL, TALENT_REGISTRY, canUnlockTalent, talentCritFl
 import { CLASS_REGISTRY, CLASS_UNLOCK_LEVEL } from "./systems/classes/data";
 import type { HunterClassDef } from "./systems/classes/types";
 import { EXAM_GATE_ID, PROMOTION_REWARD, examEligibleRank as computeExamEligibleRank, nextRank } from "./systems/exams/data";
+import { RANDOM_EVENT_RANK_MULT, rollRandomEvent } from "./systems/events/data";
+import type { RandomEventDef } from "./systems/events/types";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -474,6 +476,34 @@ export class Game {
     };
   }
 
+  /** One trash unit's full stat roll - species/variant, Elite chance
+   *  (modifier-adjusted, or forced for an Ambush's bonus unit, #12),
+   *  every stat multiplier. Factored out of `makeEnemies` so an Ambush
+   *  Random Event can reuse the exact same formula for its bonus unit
+   *  instead of a second, drifting copy of it. */
+  private makeTrashUnit(gate: GateDef, unitIndex: number, trashCount: number, modifier: GateModifier, forceElite = false): EnemyUnit {
+    const s = statsForUnit(gate, unitIndex, trashCount);
+    // Each trash unit rolls one of the gate's 5 species at random - its
+    // pool position also picks a stat-weight variant (glass-cannon,
+    // tanky, ...) so "5 different types" is felt in combat, not just read
+    // off a name label.
+    const typeIdx = Math.floor(Math.random() * gate.enemyTypes.length);
+    const name = gate.enemyTypes[typeIdx];
+    const variant = TYPE_VARIANTS[typeIdx % TYPE_VARIANTS.length];
+    // A modifier's eliteChanceBonus (e.g. Elite Surge) stacks additively
+    // onto the flat base chance, capped well short of "every unit is
+    // Elite" so a trash wave never stops feeling like trash.
+    const eliteChance = Math.min(0.6, 0.12 + modifier.eliteChanceBonus);
+    const isElite = forceElite || Math.random() < eliteChance;
+    const eliteMult = isElite ? 1.6 : 1;
+    const hp = Math.round(s.hp * variant.hpMult * eliteMult * modifier.enemyHpMult);
+    const atk = Math.round(s.atk * variant.atkMult * eliteMult * modifier.enemyAtkMult);
+    const def = Math.round(s.def * variant.defMult * modifier.enemyDefMult);
+    const xp = Math.round(s.xp * (isElite ? 1.8 : 1));
+    const gold = Math.round(xp * 0.6);
+    return this.freshUnit(name, hp, atk, def, xp, gold, isElite);
+  }
+
   private makeEnemies(gate: GateDef, entry: WavePlanEntry, trashCount: number, modifier: GateModifier): EnemyUnit[] {
     if (entry.isBoss) {
       const s = statsForBoss(gate);
@@ -484,27 +514,8 @@ export class Game {
       return [this.freshUnit(gate.bossName, hp, atk, def, s.xp, gold, false)];
     }
     const units: EnemyUnit[] = [];
-    // A modifier's eliteChanceBonus (e.g. Elite Surge) stacks additively
-    // onto the flat base chance, capped well short of "every unit is
-    // Elite" so a trash wave never stops feeling like trash.
-    const eliteChance = Math.min(0.6, 0.12 + modifier.eliteChanceBonus);
     for (let i = 0; i < entry.count; i++) {
-      const s = statsForUnit(gate, entry.unitStart + i, trashCount);
-      // Each trash unit rolls one of the gate's 5 species at random - its
-      // pool position also picks a stat-weight variant (glass-cannon,
-      // tanky, ...) so "5 different types" is felt in combat, not just read
-      // off a name label.
-      const typeIdx = Math.floor(Math.random() * gate.enemyTypes.length);
-      const name = gate.enemyTypes[typeIdx];
-      const variant = TYPE_VARIANTS[typeIdx % TYPE_VARIANTS.length];
-      const isElite = Math.random() < eliteChance;
-      const eliteMult = isElite ? 1.6 : 1;
-      const hp = Math.round(s.hp * variant.hpMult * eliteMult * modifier.enemyHpMult);
-      const atk = Math.round(s.atk * variant.atkMult * eliteMult * modifier.enemyAtkMult);
-      const def = Math.round(s.def * variant.defMult * modifier.enemyDefMult);
-      const xp = Math.round(s.xp * (isElite ? 1.8 : 1));
-      const gold = Math.round(xp * 0.6);
-      units.push(this.freshUnit(name, hp, atk, def, xp, gold, isElite));
+      units.push(this.makeTrashUnit(gate, entry.unitStart + i, trashCount, modifier));
     }
     return units;
   }
@@ -540,17 +551,87 @@ export class Game {
     if (nextIdx0 >= plan.length) return;
     const entry = plan[nextIdx0];
     const modifier = battle.modifier ?? rollGateModifier();
+    const enemies = this.makeEnemies(gate, entry, trashCount, modifier);
+
+    // Random Events (#12) - rolled on every real wave-to-wave transition.
+    // Never for a Promotion Exam trial (isPromotionExam gates are always
+    // a single wave, so this method is never even called for one) and
+    // never for the very first wave of a run (that's set up by
+    // startBattle, not advanceWave) - only between wave 2+ of a normal
+    // multi-wave gate.
+    const event = rollRandomEvent(entry.isBoss);
+    if (event) {
+      this.incrementCounter(COUNTER_KEYS.randomEventsTriggered);
+      this.applyRandomEvent(event, gate.rank);
+      if (event.effect.kind === "ambush") {
+        enemies.push(this.makeTrashUnit(gate, Math.max(0, trashCount - 1), trashCount, modifier, true));
+      }
+    }
+
     this.state.battle = {
       ...battle,
       waveIndex: battle.waveIndex + 1,
       isBossWave: entry.isBoss,
-      enemies: this.makeEnemies(gate, entry, trashCount, modifier),
+      enemies,
       over: false, result: null, locked: false, guardRounds: 0,
       playerHit: false, skillPanelOpen: false, itemPanelOpen: false,
       vfxPlayer: null, guardRing: false, lunge: null, flash: false,
       floatPlayer: null, playerGlow: false, shadowLunge: false
     };
     this.notify();
+  }
+
+  /** Applies one rolled Random Event's instant effect (#12) - everything
+   *  here is a one-shot state change plus a `global-toast.event`
+   *  announcement, no temporary duration to track. The "ambush" case is
+   *  deliberately a no-op here - it needs to push onto the *freshly
+   *  generated* enemies array for the wave about to start, which only
+   *  `advanceWave` (the caller) has in scope. */
+  private applyRandomEvent(event: RandomEventDef, gateRank: Rank) {
+    const mult = RANDOM_EVENT_RANK_MULT[gateRank];
+    switch (event.effect.kind) {
+      case "gold": {
+        const amount = Math.round(event.effect.baseAmount * mult);
+        this.state.player = { ...this.state.player, gold: this.state.player.gold + amount };
+        this.incrementCounter(COUNTER_KEYS.goldEarnedTotal, amount);
+        this.showGlobalToast(`${event.label}: +${amount}g`, "event");
+        break;
+      }
+      case "loot": {
+        const rarity = rollRarity(rankRarityBonus(gateRank) + 0.1);
+        const item = generateLoot(gateRank, rarity);
+        this.state.bag = [...this.state.bag, item];
+        this.showGlobalToast(`${event.label}: found ${item.name}`, "event");
+        break;
+      }
+      case "heal": {
+        const maxHp = this.effectiveMaxHp();
+        const maxMp = this.effectiveMaxMp();
+        const player = { ...this.state.player };
+        player.hp = Math.min(maxHp, player.hp + Math.round((maxHp - player.hp) * event.effect.hpPct));
+        player.mp = Math.min(maxMp, player.mp + Math.round((maxMp - player.mp) * event.effect.mpPct));
+        this.state.player = player;
+        this.showGlobalToast(`${event.label}: recovered some HP/MP`, "event");
+        break;
+      }
+      case "toll": {
+        // Never lethal on its own - a flavor risk/reward event should
+        // never be the thing that ends a run outright.
+        const hpCost = Math.max(1, Math.round(this.effectiveMaxHp() * event.effect.hpCostPct));
+        const goldReward = Math.round(event.effect.baseGoldReward * mult);
+        this.state.player = {
+          ...this.state.player,
+          hp: Math.max(1, this.state.player.hp - hpCost),
+          gold: this.state.player.gold + goldReward
+        };
+        this.incrementCounter(COUNTER_KEYS.goldEarnedTotal, goldReward);
+        this.showGlobalToast(`${event.label}: -${hpCost} HP, +${goldReward}g`, "event");
+        break;
+      }
+      case "ambush":
+        this.showGlobalToast(`${event.label} An extra foe joins the fight!`, "event");
+        break;
+    }
   }
 
   // ---- vfx/float plumbing ----

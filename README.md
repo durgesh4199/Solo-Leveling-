@@ -46,6 +46,13 @@ engine, no external art/font dependencies — built to run on:
   cranked way up to match. Rarer modifiers roll less often (weighted, not
   a flat coin-flip across all of them), so the biggest risk/reward gates
   actually feel rare
+- **Random Events** — every wave you clear has a ~25% chance of something
+  extra happening before the next one starts: a **Gold Cache**, a
+  **Hidden Cache** (bonus gear), a **Healing Spring** (partial HP/MP
+  restore), an **Ambush** (one bonus enemy joins the next fight - never
+  right before a boss wave), or a **Toll Shrine** (a small HP cost for a
+  bigger gold payout than a plain Gold Cache - never enough to end a run
+  on its own)
 - **Battle** — turn-based, auto-targeting the frontmost living enemy
   (underlined): **Attack**, **Skills** (see below), **Guard** (blocks for a
   random 1-3 rounds, halving incoming damage each round it's up - but
@@ -327,9 +334,10 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Crafting, Relics, Equipment Sets, Random
-Events, an Infinite Tower, Daily/Weekly missions, Prestige, combat status
+Long-term content roadmap (Better Enemy AI, Crafting, Relics, Equipment
+Sets, an Infinite Tower, Daily/Weekly missions, Prestige, combat status
 effects, and more) lives in **`EXPANSION_ROADMAP.md`**, phased so each
 stays a real, working system rather than a stub — Titles, Achievements,
-Shadow Evolution, the Talent Tree, Hunter Classes, Promotion Exams, and
-Dungeon Modifiers above are already ahead of/within that plan.
+Shadow Evolution, the Talent Tree, Hunter Classes, Promotion Exams,
+Dungeon Modifiers, and Random Events above are already ahead of/within
+that plan.

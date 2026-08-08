@@ -36,5 +36,6 @@ export const COUNTER_KEYS = {
   goldEarnedTotal: "goldEarned.total",
   itemsEquippedTotal: "itemsEquipped.total",
   potionsUsedTotal: "potionsUsed.total",
+  randomEventsTriggered: "randomEvents.total",
   killsByArchetype: (archetype: string) => `kills.${archetype}`
 } as const;

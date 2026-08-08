@@ -509,7 +509,58 @@ touching anything below.
       roll's outcome at a fixed `Math.random` value, `goldMult` applying
       correctly in `grantKillRewards`, and a `null` battle modifier
       still behaving as a pre-#11-identical 1x no-op.
-12. Random Events — pending.
+12. **Random Events** — ✅ **Done.** New `src/systems/events/` - a ~25%
+    chance (`RANDOM_EVENT_CHANCE`) of one of 5 weighted event types firing
+    on a wave-to-wave transition (`Game.advanceWave`), never on the very
+    first wave of a run (that's `startBattle`, not `advanceWave`) and
+    never for a Promotion Exam trial (single-wave, `advanceWave` is never
+    called for one at all).
+    - **Every effect is instant/one-shot** - flat gold (Gold Cache),
+      one guaranteed bonus item (Hidden Cache, reusing the existing
+      `generateLoot`/`rollRarity` loot pipeline directly), a % of missing
+      HP/MP restored (Healing Spring), or one bonus enemy joining the
+      very next wave (Ambush!). Deliberately **not** a temporary buff/
+      debuff with a duration - that's real infrastructure this system
+      doesn't have (combat status effects are still their own separate,
+      unbuilt future item), and building one as a side effect of Random
+      Events would be exactly the unrelated-system scope creep the
+      standing rules rule out.
+    - **Toll Shrine** is the one real risk/reward entry - costs a % of
+      max HP, pays out more gold than a plain Gold Cache, floored so it
+      can never itself bring the Hunter below 1 HP (a flavor event
+      should never be what ends a run outright).
+    - **Ambush is excluded from the pool whenever the upcoming wave is
+      the boss wave** - a surprise extra enemy right as the Hunter walks
+      into the fight they were already building up to reads as unfair,
+      not fun, so it's scoped out entirely rather than firing
+      indiscriminately.
+    - Gold amounts scale by a new `RANDOM_EVENT_RANK_MULT` table (rank
+      E->S, mirroring how `GATES_DATA`'s own `xp` column already ramps
+      roughly 1x->8x) so a Gold Cache/Toll Shrine's flat base amount
+      still feels proportionate at every rank.
+    - **Refactor required to reuse trash-unit generation for Ambush's
+      bonus unit**: `Game.makeEnemies`'s trash-generation body was
+      extracted into `Game.makeTrashUnit` (same formula, now also usable
+      with a `forceElite` flag) rather than duplicating that formula a
+      second time and risking the two drifting apart. Verified behavior-
+      identical via the same #11 modifier tests re-run clean.
+    - New `COUNTER_KEYS.randomEventsTriggered` counter (increments once
+      per event that actually fires) - real integration with the
+      existing Progress system, giving a future Achievement/Title
+      something to key off, the same way every other lifetime counter
+      already does.
+    - New `global-toast.event` style (green) for the announcement -
+      distinct from achievement/title/shadow/promotion toasts.
+    - Verified via a live `Game` instance: the ~25% threshold and the
+      ambush-excluded-on-boss-waves rule (2000-trial statistical check
+      confirming ambush *can* occur off a boss wave and *never* occurs
+      into one), every effect's exact numeric formula in isolation
+      (`applyRandomEvent`), the toll's 1-HP floor, and the full
+      integrated `advanceWave()` path over 800 trials - confirming the
+      bonus Ambush unit really gets appended to `battle.enemies`, the
+      trigger rate lands in the expected statistical band, and a
+      Math.random-forced "no event" run reproduces the exact pre-#12
+      enemy count with zero regression.
 13. Better Enemy AI — pending. *(Note: `decideEnemyAction` already gives
     enemies attack/guard/special decisions with some smarts - HP-based
     turtling, leaning into specials when the player guards. This item is

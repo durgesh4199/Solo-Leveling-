@@ -325,7 +325,7 @@ export interface TalentState {
 export interface GlobalToast {
   id: number;
   text: string;
-  kind: "achievement" | "title" | "info" | "shadow" | "promotion";
+  kind: "achievement" | "title" | "info" | "shadow" | "promotion" | "event";
 }
 
 export interface GameState {
