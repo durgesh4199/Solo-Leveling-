@@ -142,7 +142,7 @@ blood-red (float numbers, impact glow, screen flash); non-damage effects
 (guard, Arise, level-up) stay violet. No text combat log — feedback is
 purely visual/animated.
 
-**Stats** — 4 sub-tabs (`stats.ts` follows the same sub-tab shell pattern
+**Stats** — 5 sub-tabs (`stats.ts` follows the same sub-tab shell pattern
 as Inventory now, via a small `mountSubTab()` wrapper - the original
 Status body moved into `mountStatusBody()` unchanged, still a persistent-
 DOM/targeted-update controller, not a full rebuild, so its stat-point
@@ -154,6 +154,7 @@ gain-toast animation timers stay valid):
   chance + guard-miss reduction, VIT/INT→**immediate** max (and current)
   HP/MP (not gated behind a future level-up). Also surfaces an accent-
   bordered "Talent Points available" hint whenever there's an unspent one.
+- **Class** — see "Hunter Classes" below.
 - **Talents** — see "Talent Tree" below.
 - **Titles** — see "Meta-progression" below.
 - **Achievements** — see "Meta-progression" below.
@@ -447,7 +448,9 @@ pulses gold whenever it increases).
   effective, not a flat 6%) - small at these magnitudes, but exactly the
   kind of drift the "no multiplier chains" guardrail exists to prevent,
   and it compounds for real once more percentage-granting systems land
-  (Hunter Classes, Relics, Equipment Sets, Prestige - all still pending).
+  (Relics, Equipment Sets, Prestige - still pending; #9 Hunter Classes
+  shipped without needing this - see below, its bonuses each target one
+  specific formula rather than this shared pipeline).
   **Any future system adding its own percentage bonus to one of these
   four sites must fold into the same combined `pct` before the single
   multiply, not bolt on a second multiply.**
@@ -476,6 +479,65 @@ pulses gold whenever it increases).
   battle. `g["pendingSave"] = {...}` followed by `g.continueSave()` is
   how to test the save-migration path without round-tripping through
   actual `localStorage` JSON.
+
+## Hunter Classes (Phase 3 item #9 of EXPANSION_ROADMAP.md)
+
+- **`src/systems/classes/`** - smaller than Titles/Talents structurally
+  (no registry-heavy condition logic to evaluate, just 5 fixed defs), but
+  follows the same `types.ts` + `data.ts` split. `HunterClassId` itself
+  lives in root `types.ts`, not `systems/classes/types.ts` - it's a small
+  leaf value type `PlayerState` needs to reference directly (same
+  category as `StatKey`/`ItemSlot`/`Rank`), so `systems/classes/types.ts`
+  imports it from there rather than the reverse. This is the first system
+  to do that; follow it for any future system whose id type a root
+  interface needs to hold.
+  `HunterClassDef`/`ClassBonus` (the actual content) stay in
+  `systems/classes/types.ts` as usual.
+- **Why `ClassBonus` isn't another `TitleBonus`/`TalentBonus` clone**:
+  Titles and Talents both already cover "generic percentage into the
+  shared stat/crit/xp/gold pipeline" - a Class doing the same thing a
+  third time would be a reskinned label, not a real choice. Instead each
+  of the 5 bonus kinds names a *specific formula* to land in
+  (`attackDamagePct` -> `rollBasicAttack` only, `skillDamagePct` ->
+  `useSkill` only, `critMultiplierBonus` -> the new shared
+  `critMultiplier()`, `guardMitigationPct` -> the Guard-mitigation branch
+  in `enemyTurn`, `potionHealPct` -> `useItem`'s HP branch only) - so
+  picking Fighter genuinely changes *which* of your actions hits harder,
+  not just a flat number everything gets a slice of.
+- **`Game.critMultiplier()`** (new, private) replaces the hardcoded
+  `* 1.8` literal at the two *Hunter*-facing crit sites
+  (`rollBasicAttack`, `useSkill`). `companionStrike`'s own `* 1.8` for
+  the deployed Shadow's crit is a separate, untouched literal on
+  purpose - same "it's the Hunter's own build, not the Shadow's" line
+  Life Steal already draws (see #7's notes above). Any *future* system
+  that wants to modify the Hunter's crit multiplier should extend
+  `critMultiplier()`, not add a third place that multiplies by some
+  variant of 1.8.
+- **`PlayerState.hunterClass: HunterClassId | null`** - no save-migration
+  entry needed (unlike #8's brand-new `talents` slice): `PlayerState` is
+  already persisted whole via `saved.player`, and `Game.
+  equippedHunterClass()`/every formula site above check truthiness
+  (`if (!id) return null` / `cls?.bonus.kind === ...`), so `undefined`
+  on an old save behaves identically to `null` with zero special-casing
+  anywhere. This is the simpler alternative to #8's catch-up-grant
+  migration, and the one to reach for whenever a new field can hang off
+  an already-fully-persisted slice instead of needing its own.
+- **UI** (`screens/stats.ts`): unlike `renderTitles`/`renderAchievements`
+  (plain module-level functions with no state of their own),
+  `renderClass` is defined *inside* the `statsScreen` factory closure so
+  it can hold `classConfirmId` across redraws - Class needed a Cancel/
+  Confirm step (permanent choice) the way Titles/Achievements never did.
+  Follow this "state needed -> nest it in the factory, no state ->
+  module-level function" split for any future sub-tab.
+- **Testing note**: `g["rollBasicAttack"](target)`/`g["critMultiplier"]()`
+  (bracket access, same pattern as #7/#8's tests) isolate one formula at
+  a time. Verifying Assassin's crit bonus doesn't leak into
+  `companionStrike` needs a guaranteed-crit Shadow (a `beast` archetype
+  passive with `Math.random` mocked low so its 25% critChance always
+  procs) run once with Assassin chosen and once without, checking the
+  damage numbers come out identical - a `critMultiplier()` unit check
+  alone wouldn't catch a bug where the *shared* multiplier accidentally
+  got read from companionStrike too.
 
 ## Player aura (visual, not mechanical)
 
@@ -551,8 +613,8 @@ Arise, level-up, dissolve).
   **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture ✅ →
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
-  Tree ✅ → Hunter Classes → Promotion Exams → Dungeon Modifiers → Random
-  Events → Better Enemy AI → Crafting → Relics → Equipment Sets →
+  Tree ✅ → Hunter Classes ✅ → Promotion Exams → Dungeon Modifiers →
+  Random Events → Better Enemy AI → Crafting → Relics → Equipment Sets →
   Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always check
   that file for current status before starting any expansion work -
   **do not start the next item without an explicit go-ahead**, and do

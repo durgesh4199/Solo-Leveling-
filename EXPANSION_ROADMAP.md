@@ -364,7 +364,46 @@ touching anything below.
      bonus verified numerically at both small and large stat values,
      critChance/gold-reward integration, and both the fresh-save and
      already-migrated `continueSave()` paths.
-9. Hunter Classes — pending.
+9. **Hunter Classes** — ✅ **Done.** The 5 classes Solo Leveling itself
+   uses for Hunters (Fighter/Mage/Tank/Assassin/Healer), chosen once and
+   permanently (no respec) from `CLASS_UNLOCK_LEVEL` (5) onward.
+   Deliberately *not* another statPct/critFlat clone of what Titles (#1
+   Phase) and Talents (#8) already do - each class's bonus lands in
+   exactly one specific combat formula instead of the shared generic
+   pipeline, so the choice feels like a real identity, not a sixth
+   flavor of the same percentage:
+   - **Fighter** — +12% damage on basic Attacks only (`rollBasicAttack`).
+   - **Mage** — +12% damage on Skills only (`useSkill`).
+   - **Assassin** — +30% added to the crit *multiplier* itself (1.8 ->
+     2.1), via a new shared `critMultiplier()` used by both
+     `rollBasicAttack` and `useSkill` - deliberately not applied to the
+     deployed Shadow's own crit in `companionStrike` (its own separate
+     `* 1.8` literal, untouched), the same "it's the Hunter's own build,
+     not the Shadow's" line equipment Life Steal already draws.
+   - **Tank** — shaves further off Guard's existing damage-mitigation
+     multipliers (0.4 normal-hit / 0.75 special-hit while guarding),
+     floored at 0.05 so Guard can never reduce incoming damage to zero.
+   - **Healer** — +20% healing specifically from HP potions
+     (`useItem`'s `kind === "hp"` branch) - deliberately excludes MP
+     potions, which are a resource to spend, not something a "Healer"
+     identity is about restoring more of.
+   - `PlayerState.hunterClass: HunterClassId | null` - no new save-
+     migration path needed (unlike #8's `talents`): `PlayerState` is
+     already persisted whole, and every read site treats a missing/
+     `undefined` field the same as `null` ("no class chosen"), so an old
+     save just reads as "hasn't picked yet" with zero special-casing.
+   - UI: a 5th Status sub-tab ("Class") - locked message below the
+     unlock level, a Cancel/Confirm choice per class once unlocked
+     (mirrors Shadow Army's Merge/Evolve confirm pattern - this is
+     permanent, so it earns the same "are you sure" step), and just the
+     chosen class's card once one is set, since there's nothing left to
+     choose.
+   - Verified via a live `Game` instance: full choose-gating (below
+     unlock level, unknown id, already-chosen - each confirmed to leave
+     `hunterClass` unmutated), each of the 5 formula integrations
+     measured directly against its documented percentage, and an
+     explicit check that Assassin's crit-multiplier bonus does *not*
+     leak into the deployed Shadow's own crit damage.
 10. Promotion Exams — pending.
 
 ### Phase 4 — Content variety

@@ -10,6 +10,14 @@ export type Screen = "title" | "gates" | "battle" | "stats" | "shadows" | "inven
 
 export type StatKey = "str" | "agi" | "int" | "vit" | "per";
 
+/** One of the 5 Hunter Classes (see systems/classes/) - defined here
+ *  rather than in systems/classes/types.ts because it's a small leaf
+ *  value type `PlayerState` itself needs to reference, the same category
+ *  as `StatKey`/`ItemSlot`/`Rank` above; `HunterClassDef`/`ClassBonus`
+ *  (the actual content/definitions) stay in systems/classes/types.ts and
+ *  import this rather than redefining it. */
+export type HunterClassId = "fighter" | "mage" | "tank" | "assassin" | "healer";
+
 export interface PlayerState {
   name: string;
   level: number;
@@ -27,6 +35,13 @@ export interface PlayerState {
   per: number;
   gold: number;
   equipment: Partial<Record<ItemSlot, LootItem>>;
+  /** Chosen once, permanently (no respec - see Game.chooseHunterClass),
+   *  starting at CLASS_UNLOCK_LEVEL. `null`/`undefined` both mean "no
+   *  class chosen yet" - a save from before this item predates the field
+   *  entirely, so every read site treats it as falsy rather than
+   *  requiring a strict `=== null` (no migration/backfill needed since
+   *  `PlayerState` is already persisted whole). */
+  hunterClass: HunterClassId | null;
 }
 
 export interface GateDef {

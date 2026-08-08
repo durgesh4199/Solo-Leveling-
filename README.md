@@ -110,6 +110,13 @@ engine, no external art/font dependencies — built to run on:
   capstone; **Utility** trades AGI/PER into a Gold/XP economy topped with
   a Crit capstone - three genuinely different builds, stacking on top of
   gear and an equipped Title rather than competing with either
+- **Hunter Class** — a Class sub-tab on Status: at Level 5, choose one of
+  the 5 classes permanently (no respec) - **Fighter** (+12% Attack
+  damage), **Mage** (+12% Skill damage), **Tank** (Guard mitigates far
+  more damage), **Assassin** (+30% critical damage), or **Healer** (+20%
+  healing from HP potions). Each bonus lands in one specific action
+  instead of a generic stat boost, so the choice actually changes how you
+  fight, not just your numbers
 - **Equipment** — 6 slots (Weapon, Helmet, Body Armor, Legs, Ring, Amulet),
   each item rolling 1-4 random affixes depending on rarity: the five core
   stats (folds into effectiveStat, same as a stat point), direct flat
@@ -301,9 +308,9 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Hunter Classes, Crafting, Relics, Equipment
-Sets, Dungeon Modifiers, Random Events, Promotion Exams, an Infinite
-Tower, Daily/Weekly missions, Prestige, combat status effects, and more)
-lives in **`EXPANSION_ROADMAP.md`**, phased so each stays a real, working
-system rather than a stub — Titles, Achievements, Shadow Evolution, and
-the Talent Tree above are already ahead of/within that plan.
+Long-term content roadmap (Crafting, Relics, Equipment Sets, Dungeon
+Modifiers, Random Events, Promotion Exams, an Infinite Tower, Daily/Weekly
+missions, Prestige, combat status effects, and more) lives in
+**`EXPANSION_ROADMAP.md`**, phased so each stays a real, working system
+rather than a stub — Titles, Achievements, Shadow Evolution, the Talent
+Tree, and Hunter Classes above are already ahead of/within that plan.

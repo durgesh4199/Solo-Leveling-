@@ -8,8 +8,10 @@ import { ACHIEVEMENTS } from "../systems/achievements/data";
 import { evaluateCondition, conditionProgressText } from "../systems/progress/conditions";
 import { TALENTS, canUnlockTalent } from "../systems/talents/data";
 import type { TalentBranch, TalentNode } from "../systems/talents/types";
+import { CLASS_UNLOCK_LEVEL, HUNTER_CLASSES } from "../systems/classes/data";
+import type { HunterClassId } from "../types";
 
-type SubTab = "status" | "titles" | "achievements" | "talents";
+type SubTab = "status" | "titles" | "achievements" | "talents" | "class";
 
 /** What a single point in this stat actually buys, in concrete numbers -
  *  previewed on hover (before you commit) and floated as a confirmation
@@ -317,10 +319,84 @@ function renderTalents(body: HTMLElement, game: Game): void {
 export const statsScreen: ScreenModule = (root, game) => {
   let subTab: SubTab = "status";
   let statusController: ScreenController | null = null;
+  // Class id currently showing its "become this class forever?" confirm -
+  // held here (not module-level like renderTitles/renderAchievements)
+  // since it's the one sub-tab on this screen with interactive state to
+  // track across redraws, and this factory already gets a fresh closure
+  // per screen mount the way module-level state wouldn't.
+  let classConfirmId: HunterClassId | null = null;
 
   const subTabBtn = (tab: SubTab, label: string, iconName: string) => `
     <button class="btn ${subTab === tab ? "btn-primary" : "btn-secondary"} action-btn" data-substat="${tab}"
       style="flex:1;justify-content:center;padding:var(--space-2);font-size:12px;">${icon(iconName as any)} ${label}</button>`;
+
+  /** Class is a one-time, permanent choice (no respec - see
+   *  Game.chooseHunterClass), so picking one goes through the same
+   *  Cancel/Confirm step every other permanent action in the game uses
+   *  (Shadow Army's Merge/Evolve). Once chosen, this just displays it -
+   *  there's nothing left to choose. */
+  const renderClass = (body: HTMLElement) => {
+    const p = game.state.player;
+    const chosen = p.hunterClass ? HUNTER_CLASSES.find((c) => c.id === p.hunterClass) ?? null : null;
+
+    let content: string;
+    if (chosen) {
+      content = `
+        <div class="card elev-sm" style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);border-color:var(--color-accent-600);">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:20px;color:var(--color-accent-300);">${icon("shield")}</span>
+            <div style="font-size:16px;font-weight:600;">${chosen.name}</div>
+          </div>
+          <div style="font-size:12px;color:var(--color-neutral-400);">${chosen.description}</div>
+          <div style="font-size:12px;color:var(--color-accent-300);font-weight:500;">${chosen.bonusText}</div>
+        </div>
+        <div style="font-size:11px;color:var(--color-neutral-600);">Your class is permanent - there's no respec.</div>`;
+    } else if (p.level < CLASS_UNLOCK_LEVEL) {
+      content = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-2);padding:var(--space-6) 0;color:var(--color-neutral-500);text-align:center;">
+          <span style="font-size:28px;color:var(--color-neutral-700);">${icon("shield")}</span>
+          <div style="font-size:12px;">Choose a Hunter Class at Level ${CLASS_UNLOCK_LEVEL} (currently Level ${p.level}).</div>
+        </div>`;
+    } else {
+      content = `
+        <div style="font-size:11px;color:var(--color-neutral-500);margin-bottom:var(--space-1);">Permanent, no respec - pick the identity that fits how you fight.</div>
+        <div style="display:flex;flex-direction:column;gap:var(--space-2);">
+          ${HUNTER_CLASSES.map((c) => {
+            const confirming = classConfirmId === c.id;
+            const action = confirming
+              ? `
+                <div style="display:flex;gap:6px;margin-top:6px;">
+                  <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:5px;font-size:11px;" data-action="cancel-class">Cancel</button>
+                  <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:5px;font-size:11px;" data-action="confirm-class" data-id="${c.id}">Become ${c.name}</button>
+                </div>`
+              : `<button class="btn btn-secondary action-btn" style="margin-top:6px;justify-content:center;padding:5px;font-size:11px;" data-action="pick-class" data-id="${c.id}">Choose</button>`;
+            return `
+              <div class="card elev-sm" style="padding:var(--space-3);">
+                <div style="font-size:13px;font-weight:500;">${c.name}</div>
+                <div style="font-size:11px;color:var(--color-neutral-500);margin-top:2px;">${c.description}</div>
+                <div style="font-size:11px;color:var(--color-accent-300);margin-top:2px;">${c.bonusText}</div>
+                ${action}
+              </div>`;
+          }).join("")}
+        </div>`;
+    }
+
+    body.innerHTML = `<div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">${content}</div>`;
+
+    body.querySelectorAll<HTMLElement>('[data-action="pick-class"]').forEach((el) => {
+      el.addEventListener("click", () => { classConfirmId = el.dataset.id as HunterClassId; renderClass(body); });
+    });
+    body.querySelectorAll<HTMLElement>('[data-action="cancel-class"]').forEach((el) => {
+      el.addEventListener("click", () => { classConfirmId = null; renderClass(body); });
+    });
+    body.querySelectorAll<HTMLElement>('[data-action="confirm-class"]').forEach((el) => {
+      el.addEventListener("click", () => {
+        game.chooseHunterClass(el.dataset.id!);
+        classConfirmId = null;
+        renderClass(body);
+      });
+    });
+  };
 
   const mountSubTab = () => {
     statusController?.unmount?.();
@@ -336,6 +412,7 @@ export const statsScreen: ScreenModule = (root, game) => {
         <div style="font-size:13px;color:var(--color-neutral-400);margin-bottom:var(--space-4);">${p.name} · ${rank}-Rank · Level ${p.level}</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${subTabBtn("status", "Status", "chart-bar")}
+          ${subTabBtn("class", "Class", "shield")}
           ${subTabBtn("talents", "Talents", "lightning")}
           ${subTabBtn("titles", "Titles", "sparkles")}
           ${subTabBtn("achievements", "Achievements", "check-circle")}
@@ -350,6 +427,7 @@ export const statsScreen: ScreenModule = (root, game) => {
 
     const body = root.querySelector<HTMLElement>("#stats-subtab-body")!;
     if (subTab === "status") statusController = mountStatusBody(body, game);
+    else if (subTab === "class") renderClass(body);
     else if (subTab === "talents") renderTalents(body, game);
     else if (subTab === "titles") renderTitles(body, game);
     else renderAchievements(body, game);

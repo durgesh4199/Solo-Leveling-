@@ -10,6 +10,8 @@ import { clearSave, loadSave, writeSave } from "./systems/save";
 import type { SavedGameState } from "./systems/save/types";
 import { SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_NAME_MAX_LENGTH, SHADOW_SKILLS, effectiveShadowPower, nextShadowRank, shadowXpToNext } from "./systems/shadows/data";
 import { TALENT_POINTS_PER_LEVEL, TALENT_REGISTRY, canUnlockTalent, talentCritFlat, talentGoldPct, talentStatPct, talentXpPct } from "./systems/talents/data";
+import { CLASS_REGISTRY, CLASS_UNLOCK_LEVEL } from "./systems/classes/data";
+import type { HunterClassDef } from "./systems/classes/types";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -37,7 +39,7 @@ const INITIAL_STATE: GameState = {
     name: "Hunter", level: 1, xp: 0, xpToNext: 80,
     hp: 100, maxHp: 100, mp: 30, maxMp: 30,
     statPoints: 0, str: 10, agi: 10, int: 10, vit: 10, per: 10,
-    gold: 0, equipment: {}
+    gold: 0, equipment: {}, hunterClass: null
   },
   gatesCleared: {},
   shadowArmy: [],
@@ -359,6 +361,31 @@ export class Game {
     if (id !== null && !this.state.progress.unlockedTitleIds.includes(id)) return;
     this.state.progress = { ...this.state.progress, equippedTitleId: id };
     this.notify();
+  }
+
+  private equippedHunterClass(): HunterClassDef | null {
+    const id = this.state.player.hunterClass;
+    if (!id) return null;
+    return CLASS_REGISTRY.get(id) ?? null;
+  }
+
+  /** Item #9 of the fixed roadmap. A one-time, permanent choice (no
+   *  respec) available from `CLASS_UNLOCK_LEVEL` onward - rejects a
+   *  second call once a class is already set, an unknown id, and a call
+   *  before the unlock level, all without mutating state. Each class's
+   *  bonus lands in exactly one combat formula (rollBasicAttack,
+   *  useSkill, the shared crit multiplier, Guard's damage mitigation, or
+   *  useItem's HP potion branch) rather than folding into the generic
+   *  stat/crit/xp/gold pipeline Titles and Talents already share - see
+   *  ClassBonus's doc comment in systems/classes/types.ts for why. */
+  chooseHunterClass(classId: string): boolean {
+    if (this.state.player.hunterClass) return false;
+    if (this.state.player.level < CLASS_UNLOCK_LEVEL) return false;
+    const def = CLASS_REGISTRY.get(classId as HunterClassDef["id"]);
+    if (!def) return false;
+    this.state.player = { ...this.state.player, hunterClass: def.id };
+    this.notify();
+    return true;
   }
 
   private showGlobalToast(text: string, kind: GlobalToast["kind"]) {
@@ -718,6 +745,16 @@ export class Game {
     return dmg;
   }
 
+  /** 1.8 plus an Assassin's `critMultiplierBonus`, if that's the chosen
+   *  class - shared by every *Hunter* crit (rollBasicAttack, useSkill),
+   *  deliberately not the deployed Shadow's own crit in companionStrike
+   *  (its own separate `* 1.8` literal) - same "it's the Hunter's own
+   *  build, not the Shadow's" line equipment Life Steal already draws. */
+  private critMultiplier(): number {
+    const cls = this.equippedHunterClass();
+    return 1.8 + (cls?.bonus.kind === "critMultiplierBonus" ? cls.bonus.value : 0);
+  }
+
   /** Rolls one basic-Attack hit's damage + crit result against a target -
    *  shared by the primary Attack and an equipped Attack Speed affix's
    *  chance at an immediate follow-up strike (see battleAttack), so the
@@ -728,7 +765,9 @@ export class Game {
       6 + this.effectiveStat("str") * STAT_TUNING.strAtkPerPoint + this.equipmentAffixSum("fireDamage")
       - target.def + (Math.random() * 4 - 2)
     ));
-    if (isCrit) dmg = Math.round(dmg * 1.8);
+    const cls = this.equippedHunterClass();
+    if (cls?.bonus.kind === "attackDamagePct") dmg = Math.round(dmg * (1 + cls.bonus.value));
+    if (isCrit) dmg = Math.round(dmg * this.critMultiplier());
     return { dmg, isCrit };
   }
 
@@ -988,7 +1027,15 @@ export class Game {
 
       const isSpecial = action === "special";
       let dmg = Math.max(1, Math.round(attacker.atk * (isSpecial ? 1.7 : 1) + (Math.random() * 6 - 3)));
-      if (wasGuardingRound) dmg = Math.round(dmg * (isSpecial ? 0.75 : 0.4));
+      if (wasGuardingRound) {
+        // A Tank's guardMitigationPct shaves further off the already-
+        // reduced guard multiplier (0.4 normal / 0.75 special), floored
+        // so Guard can never round all the way down to zero damage.
+        const cls = this.equippedHunterClass();
+        const classGuardPct = cls?.bonus.kind === "guardMitigationPct" ? cls.bonus.value : 0;
+        const guardMult = Math.max(0.05, (isSpecial ? 0.75 : 0.4) - classGuardPct);
+        dmg = Math.round(dmg * guardMult);
+      }
 
       attacker.lunging = true;
       // "smash" is its own vfx (a red shockwave ring, not the flurry slashes
@@ -1118,12 +1165,15 @@ export class Game {
 
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy });
     const fireDamage = this.equipmentAffixSum("fireDamage");
+    const cls = this.equippedHunterClass();
+    const classSkillPct = cls?.bonus.kind === "skillDamagePct" ? cls.bonus.value : 0;
     let totalDealt = 0;
     for (const target of targets) {
       const isCrit = this.rollCrit();
       let dmg = Math.max(1, Math.round(skillDef.base + str * skillDef.scale + fireDamage - target.def + (Math.random() * 4 - 2)));
       if (skillDef.kind === "execute" && target.hp <= target.maxHp * 0.3) dmg *= 2;
-      if (isCrit) dmg = Math.round(dmg * 1.8);
+      if (classSkillPct > 0) dmg = Math.round(dmg * (1 + classSkillPct));
+      if (isCrit) dmg = Math.round(dmg * this.critMultiplier());
       this.setUnitVfx(target, skillDef.kind === "single" && !isCrit ? "slash" : "flurry");
       totalDealt += this.applyDamage(battle, target, dmg, isCrit);
       this.clearHitFlagLater(target.uid);
@@ -1178,10 +1228,16 @@ export class Game {
     battle.locked = true;
     battle.itemPanelOpen = false;
     const player = { ...this.state.player };
-    if (def.kind === "hp") player.hp = Math.min(this.effectiveMaxHp(), player.hp + def.amount);
-    else player.mp = Math.min(this.effectiveMaxMp(), player.mp + def.amount);
+    // A Healer's potionHealPct only applies to HP potions - MP is a
+    // resource to spend, not something a "Healer" identity is about
+    // restoring more of.
+    const cls = this.equippedHunterClass();
+    const classHealPct = def.kind === "hp" && cls?.bonus.kind === "potionHealPct" ? cls.bonus.value : 0;
+    const amount = classHealPct > 0 ? Math.round(def.amount * (1 + classHealPct)) : def.amount;
+    if (def.kind === "hp") player.hp = Math.min(this.effectiveMaxHp(), player.hp + amount);
+    else player.mp = Math.min(this.effectiveMaxMp(), player.mp + amount);
     const potions = { ...this.state.inventory.potions, [potionId]: count - 1 };
-    this.triggerFloatPlayer(battle, `+${def.amount}`, "heal");
+    this.triggerFloatPlayer(battle, `+${amount}`, "heal");
     this.state.battle = battle;
     this.state.player = player;
     this.state.inventory = { potions };
