@@ -576,7 +576,8 @@ export class Game {
       over: false, result: null, locked: false, guardRounds: 0,
       playerHit: false, skillPanelOpen: false, itemPanelOpen: false,
       vfxPlayer: null, guardRing: false, lunge: null, flash: false,
-      floatPlayer: null, playerGlow: false, shadowLunge: false
+      floatPlayer: null, playerGlow: false, shadowLunge: false,
+      bossEnraged: false
     };
     this.notify();
   }
@@ -1120,15 +1121,41 @@ export class Game {
     this.notify();
   }
 
-  /** Chooses what an attacking enemy does this round. Not pure chance:
-   *  a badly hurt unit is more likely to turtle up, and any unit is more
-   *  likely to bust out its special the instant the player is guarding -
-   *  it's the difference between "smarter" and "random". */
+  /** Below this HP fraction, a boss stops holding anything back - see
+   *  `decideEnemyAction`'s enrage check. */
+  private static readonly BOSS_ENRAGE_HP_PCT = 0.25;
+
+  /** Chooses what an attacking enemy does this round. Three real, tuned
+   *  behaviors on top of "roll a die" (#13, Better Enemy AI - deepening
+   *  the original turtle-when-hurt/press-when-guarded smarts, not
+   *  replacing them):
+   *  - **Boss enrage**: a boss below `BOSS_ENRAGE_HP_PCT` always uses its
+   *    special - a real phase change, not a boss playing exactly like a
+   *    bigger trash unit all the way to 0. Bypasses the roll entirely.
+   *  - **Elite aggression**: Elites are bruisers, not turtles - a lower
+   *    base guard chance than plain trash, on top of the existing
+   *    "threatening -> more special" bump they already shared with
+   *    bosses.
+   *  - **Pressing the advantage**: a badly hurt Hunter gets *less*
+   *    cautious enemies, not equally-likely-to-guard ones - guard chance
+   *    drops hard and special chance climbs when the player is low, so a
+   *    close fight doesn't let the player stall it out against an AI
+   *    that doesn't notice it's winning. */
   private decideEnemyAction(unit: EnemyUnit, battle: BattleState, playerGuarding: boolean): EnemyAction {
+    if (battle.isBossWave && unit.hp <= unit.maxHp * Game.BOSS_ENRAGE_HP_PCT) return "special";
+
     const threatening = unit.isElite || battle.isBossWave;
     const lowHp = unit.hp < unit.maxHp * 0.3;
-    const guardChance = 0.12 + (lowHp ? 0.15 : 0);
-    const specialChance = (threatening ? 0.28 : 0.16) + (playerGuarding ? 0.15 : 0);
+    const playerLowHp = this.state.player.hp < this.effectiveMaxHp() * 0.3;
+
+    let guardChance = 0.12 + (lowHp ? 0.15 : 0) + (unit.isElite ? -0.06 : 0);
+    let specialChance = (threatening ? 0.28 : 0.16) + (playerGuarding ? 0.15 : 0);
+    if (playerLowHp) {
+      guardChance -= 0.2;
+      specialChance += 0.2;
+    }
+    guardChance = Math.max(0, guardChance);
+
     const roll = Math.random();
     if (roll < guardChance) return "guard";
     if (roll < guardChance + specialChance) return "special";
@@ -1171,6 +1198,12 @@ export class Game {
 
       const next = this.cloneBattle(battle);
       const attacker = next.enemies.find((u) => u.uid === found.uid)!;
+      // Computed *before* decideEnemyAction (which shares this exact
+      // condition internally) so the toast below can tell "just entered
+      // enrage" apart from "already enraged, still forced into special" -
+      // the announcement only fires once per boss, not every enraged round.
+      const enragingNow = battle.isBossWave && !battle.bossEnraged && attacker.hp <= attacker.maxHp * Game.BOSS_ENRAGE_HP_PCT;
+      if (enragingNow) next.bossEnraged = true;
       const action = this.decideEnemyAction(attacker, next, wasGuardingRound);
 
       if (action === "guard") {
@@ -1203,7 +1236,8 @@ export class Game {
       next.lunge = null;
       this.emitFx({ kind: isSpecial ? "smash" : "slash", side: "player" });
       this.emitFx({ kind: "shake", intensity: isSpecial ? "heavy" : "light" });
-      if (isSpecial) this.showBattleToast(next, { text: `${attacker.name} unleashes a fierce strike!`, kind: "info" });
+      if (enragingNow) this.showBattleToast(next, { text: `${attacker.name} grows desperate and unleashes a fierce strike!`, kind: "info" });
+      else if (isSpecial) this.showBattleToast(next, { text: `${attacker.name} unleashes a fierce strike!`, kind: "info" });
 
       const player = { ...this.state.player };
       player.hp = Math.max(0, player.hp - dmg);

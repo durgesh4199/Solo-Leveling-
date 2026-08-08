@@ -561,10 +561,39 @@ touching anything below.
       trigger rate lands in the expected statistical band, and a
       Math.random-forced "no event" run reproduces the exact pre-#12
       enemy count with zero regression.
-13. Better Enemy AI — pending. *(Note: `decideEnemyAction` already gives
-    enemies attack/guard/special decisions with some smarts - HP-based
-    turtling, leaning into specials when the player guards. This item is
-    about deepening it, not building from scratch.)*
+13. **Better Enemy AI** — ✅ **Done.** Three real, tuned behaviors added
+    to `decideEnemyAction` on top of the original turtle-when-hurt/press-
+    when-guarded logic (untouched, not replaced):
+    - **Boss enrage** - a boss at or below 25% HP
+      (`Game.BOSS_ENRAGE_HP_PCT`) always uses its special attack, no roll
+      involved - a real phase-change moment instead of a boss playing
+      exactly like a bigger trash unit all the way to 0 HP. A one-time
+      `grows desperate and unleashes a fierce strike!` toast announces
+      the moment it happens (new `BattleState.bossEnraged` flag so it
+      only fires once per boss, not every enraged round after); later
+      enraged rounds fall back to the plain "unleashes a fierce strike!"
+      text every ordinary special already gets.
+    - **Elite aggression** - Elites are bruisers, not turtles: a lower
+      base guard chance than plain trash, layered on top of the
+      existing "threatening -> more special" bump they already shared
+      with bosses. Distinct from the boss's enrage behavior on purpose -
+      each of the 3 additions has its own flavor rather than every
+      "tougher" unit getting the same treatment.
+    - **Pressing the advantage** - when the *player* drops below 30% HP,
+      every enemy's guard chance drops hard (floored at 0) and special
+      chance climbs - a close fight doesn't let the player stall it out
+      by guarding against an AI that doesn't notice it's winning.
+    - Verified via a live `Game` instance, calling `decideEnemyAction`
+      directly at deterministic `Math.random` values chosen to sit
+      between two behaviors' actual thresholds (e.g. a roll between
+      Elite's and plain trash's guard-chance cutoffs, so the same roll
+      produces "guard" for one and "special" for the other) - confirms
+      enrage bypasses the roll entirely and is boss-only (a non-boss
+      unit at the identical low HP% is unaffected), Elite's lower guard
+      chance, and the player-HP-aware guard/special shift. Also verified
+      the full `enemyTurn` integration: the enrage toast's distinct text
+      fires exactly once, and a later still-enraged round reads with the
+      ordinary special text instead of repeating it.
 
 ### Phase 5 — Itemization depth
 14. Crafting — pending.

@@ -288,6 +288,13 @@ export interface BattleState {
   shadowLunge?: boolean;
   shadowVfxId?: number;
 
+  /** True once this boss has dropped to its enrage threshold (#13,
+   *  Better Enemy AI) - drives the one-time "grows desperate" toast text
+   *  distinct from the ordinary "unleashes a fierce strike" one a
+   *  regular special already gets, so the phase-change moment actually
+   *  reads as a moment instead of silently making the boss tougher. */
+  bossEnraged?: boolean;
+
   toast?: BattleToast | null;
   toastId?: number;
 }

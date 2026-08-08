@@ -147,7 +147,11 @@ round up, but Attack itself can whiff while guarding — AGI/PER reduce that
 miss chance), **Items** (tiered potions). Enemies aren't just damage
 sponges: each rolls attack/guard/special per its own AI
 (`decideEnemyAction`) — low-HP units turtle up more, all units lean into
-specials the instant the player guards. A deployed Shadow auto-strikes
+specials the instant the player guards, Elites are more aggressive/less
+guard-happy than plain trash, a badly-hurt player faces enemies that press
+the advantage instead of guarding, and a boss below 25% HP enters a real
+enrage phase (always special, a one-time "grows desperate" toast) - see
+"Better Enemy AI" below. A deployed Shadow auto-strikes
 after every player action (`companionStrike`). All landed hits read
 blood-red (float numbers, impact glow, screen flash); non-damage effects
 (guard, Arise, level-up) stay violet. No text combat log — feedback is
@@ -719,6 +723,53 @@ pulses gold whenever it increases).
   consulted) is how to drive the integrated path directly without
   needing a live `battleAttack()`/kill sequence first.
 
+## Better Enemy AI (Phase 4 item #13 of EXPANSION_ROADMAP.md)
+
+- **No new module** - unlike #11/#12, this item is entirely inside
+  `Game.decideEnemyAction`/`Game.enemyTurn` (store.ts), since it's
+  deepening logic that was already centralized there, not adding new
+  content data. `Game.BOSS_ENRAGE_HP_PCT` (a `private static readonly`)
+  is the one new named constant, shared between `decideEnemyAction`
+  (the actual gate) and `enemyTurn` (the toast/`bossEnraged`-flag logic,
+  which needs to recompute the *same* condition to tell "just entered
+  enrage this round" apart from "already enraged" - see below).
+- **Enrage bypasses the roll entirely** - `decideEnemyAction` returns
+  `"special"` immediately for an enraged boss, before any of the
+  guard/special chance math even runs. This is deliberate: enrage is a
+  hard phase change, not "a much higher special chance" that could still
+  roll into a guard.
+- **The enrage toast needed the *caller* to know something
+  `decideEnemyAction` alone can't tell it**: whether this is the round
+  the boss *just* dropped into enrage range (worth a distinct "grows
+  desperate" announcement) vs. a later round where it's already been
+  enraged for a while (worth the ordinary "unleashes a fierce strike"
+  text every special already gets). `enemyTurn` recomputes the same
+  `battle.isBossWave && !battle.bossEnraged && hp <= threshold` check
+  itself (`enragingNow`) *before* calling `decideEnemyAction`, sets
+  `next.bossEnraged = true` if it's true, and picks which toast text to
+  show based on that - not on `decideEnemyAction`'s return value alone,
+  since by the time that returns, "was this the entry round" information
+  is already lost. If a future change ever needs `decideEnemyAction` to
+  report *why* it chose an action (not just what), that's the sign to
+  finally give it a richer return type instead of this recompute-at-the-
+  call-site pattern - fine for one flag, would get messy for more.
+- **`showBattleToast` is single-slot per battle** (`battle.toast`, no
+  queue) - calling it twice in the same synchronous `enemyTurn` step
+  would silently stomp the first call, so the enrage-vs-ordinary toast
+  choice has to be a single `if/else if`, never two separate calls in
+  sequence. Keep this in mind for any future addition that wants to
+  announce two things in the same enemy action.
+- **Testing note**: `decideEnemyAction` is pure roll-vs-threshold, so
+  picking a `Math.random()` mock value that sits *between* two
+  behaviors' actual computed thresholds (e.g. Elite's 0.06 guardChance
+  vs. plain trash's 0.12) is enough to prove the difference
+  deterministically, no statistical trials needed (unlike #11/#12's
+  weighted-pool systems). The full `enemyTurn` integration test for the
+  enrage toast can be driven synchronously - for a boss wave (always
+  exactly one enemy), `this.state.battle` is set before `enemyTurn`'s
+  first `setTimeout` ever fires, so `g["enemyTurn"](battle)` followed by
+  reading `g.state.battle.toast`/`.bossEnraged` needs no polling.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -794,7 +845,7 @@ Arise, level-up, dissolve).
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
   Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers ✅ →
-  Random Events ✅ → Better Enemy AI → Crafting → Relics → Equipment
+  Random Events ✅ → Better Enemy AI ✅ → Crafting → Relics → Equipment
   Sets → Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always
   check that file for current status before starting any expansion work -
   **do not start the next item without an explicit go-ahead**, and do

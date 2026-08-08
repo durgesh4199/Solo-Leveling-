@@ -66,10 +66,16 @@ engine, no external art/font dependencies — built to run on:
   strike** (~1.7x damage, its own blood-red shockwave-ring vfx distinct
   from a normal hit or a player crit, telegraphed with a toast and a
   heavier shake) - low-HP enemies turtle up more, and all of them lean into
-  specials the instant *you're* the one guarding. Every landed hit - yours,
-  a Shadow's, or an enemy's - reads blood red (float numbers, impact glow,
-  screen flash); non-damage effects (guard, Arise, level-up) stay violet.
-  Feedback is purely visual - no text log
+  specials the instant *you're* the one guarding. **Elites** are aggressive
+  bruisers, not turtles - they guard less and press specials more than
+  plain trash. A **boss below 25% HP enters Enrage** - always its special
+  attack from then on, announced with a one-time "grows desperate" toast,
+  a real phase-change moment instead of a boss playing exactly like a
+  bigger trash unit all the way down. And if *you're* the one on the ropes
+  (under 30% HP), every enemy presses the advantage instead of guarding.
+  Every landed hit - yours, a Shadow's, or an enemy's - reads blood red
+  (float numbers, impact glow, screen flash); non-damage effects (guard,
+  Arise, level-up) stay violet. Feedback is purely visual - no text log
 - **Skills** — unlock progressively with level, opened via a picker panel
   (locked ones show their unlock level): **Dagger Rush** (Lv 1, heavy
   single hit), **Piercing Thrust** (Lv 5, hits the front 2 enemies),
@@ -334,10 +340,9 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Better Enemy AI, Crafting, Relics, Equipment
-Sets, an Infinite Tower, Daily/Weekly missions, Prestige, combat status
-effects, and more) lives in **`EXPANSION_ROADMAP.md`**, phased so each
-stays a real, working system rather than a stub — Titles, Achievements,
-Shadow Evolution, the Talent Tree, Hunter Classes, Promotion Exams,
-Dungeon Modifiers, and Random Events above are already ahead of/within
-that plan.
+Long-term content roadmap (Crafting, Relics, Equipment Sets, an Infinite
+Tower, Daily/Weekly missions, Prestige, combat status effects, and more)
+lives in **`EXPANSION_ROADMAP.md`**, phased so each stays a real, working
+system rather than a stub — Titles, Achievements, Shadow Evolution, the
+Talent Tree, Hunter Classes, Promotion Exams, Dungeon Modifiers, Random
+Events, and Better Enemy AI above are already ahead of/within that plan.
