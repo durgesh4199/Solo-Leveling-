@@ -404,7 +404,69 @@ touching anything below.
      measured directly against its documented percentage, and an
      explicit check that Assassin's crit-multiplier bonus does *not*
      leak into the deployed Shadow's own crit damage.
-10. Promotion Exams — pending.
+10. **Promotion Exams** — ✅ **Done.** `rankForLevel(level)` (data.ts) used
+    to be the *only* notion of "rank" in the game - the instant your
+    level crossed a threshold, every rank-driven system (Shop stock,
+    Arise'd Shadow power, the portrait aura, "reach rank X" Title/
+    Achievement conditions) treated you as already there. That's now
+    split in two: `rankForLevel(level)` stays exactly as it was (the rank
+    your *level alone* would qualify you for), and a new
+    `PlayerState.rank` is the Hunter's *officially confirmed* rank -
+    every one of those systems reads `player.rank` now, not
+    `rankForLevel(player.level)`. The gap between the two is what a
+    Promotion Exam closes.
+    - **The exam itself is a real fight, not a menu toggle**: 5 new
+      `GateDef` entries (`EXAM_GATES_DATA`, one per rank D through S)
+      flagged `isPromotionExam`, which collapses `totalEnemiesForGate` to
+      a single solo boss - no trash waves. Stat baselines are hand-tuned
+      a notch above the first gate of the rank being left behind, so it
+      reads as "harder than what you've been fighting," not a formality.
+      Because it's a real `GateDef`, `Game.startBattle` runs it with
+      *zero* special-casing - the entire combat/loot/XP engine already
+      works for it.
+    - **`Game.examEligibleRank()`** compares `rankForLevel(player.level)`
+      against `player.rank` and offers only the *next* tier up, even if
+      level has raced several thresholds ahead in one big XP grant - one
+      exam at a time, in order, never skipping straight to the top.
+    - **`Game.completePromotionExam`** (private, called from
+      `onWaveCleared` when the cleared gate is an exam) confirms the new
+      rank and pays a one-time gold + stat point reward
+      (`PROMOTION_REWARD`, systems/exams/data.ts) *on top of* the fight's
+      own normal kill rewards - and, since crossing into a new rank can
+      itself satisfy a "reach rank X" Title/Achievement condition,
+      *on top of* whatever `refreshProgress()` grants for that too. All
+      three stack by design. Deliberately does **not** mark the exam gate
+      in `gatesCleared` - it isn't one of the 20 explorable gates the
+      "clear every gate" condition counts.
+    - **No Arise after an exam**: `ariseShadow()` already only accepts a
+      `"wave-clear"`/`"gate-clear"` battle result; the new `"exam-pass"`
+      result is neither, so it's refused for free with no special-casing
+      needed there either - a Proctor isn't a monster to command as a
+      Shadow.
+    - **Save migration**: unlike `hunterClass` (a missing field safely
+      reads as "none chosen"), `rank` has no meaningful falsy state - an
+      old save gets it backfilled from `rankForLevel(level)` in
+      `continueSave()`, so an already-leveled Hunter keeps the rank their
+      level already implied rather than being knocked back to E. The
+      Title screen's save *preview* (before `continueSave()` actually
+      runs) falls back the same way, since it reads potentially-
+      unmigrated data.
+    - **UI**: a Promotion Exam banner on the Gates screen (above the
+      normal 20-gate list, not mixed into it) whenever
+      `examEligibleRank()` is non-null; a distinct "Promoted!" result
+      panel in battle (no Arise button) instead of the normal "Gate
+      Cleared" one; a new gold-white `global-toast.promotion` style for
+      the announcement.
+    - Verified via a live `Game` instance: eligibility gating (including
+      the "leveled past several tiers, still only offers the next one"
+      case, and "already S-Rank, no further exam"), `startPromotionExam`
+      resolving the correct single-boss gate, a full win resolving to the
+      correct confirmed rank / `"exam-pass"` result / gold+stat reward /
+      an untouched `gatesCleared`, a loss leaving rank unchanged, three
+      call sites (`rerollShop`, `ariseShadow`, `progressContext`) reading
+      confirmed rank instead of level-implied rank in a scenario where
+      the two disagree, and both `continueSave()` migration paths (missing
+      field backfilled vs. already-present field left alone).
 
 ### Phase 4 — Content variety
 11. Dungeon Modifiers — pending. *(Note: a first version already exists -

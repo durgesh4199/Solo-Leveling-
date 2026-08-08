@@ -3,7 +3,7 @@ import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { AURA_TIER, PLAYER_RANK_GLOW, enemyPortrait, hunterPortrait, playerAuraHtml, shadowPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
-import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS, SKILL_REGISTRY, rankForLevel } from "../data";
+import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS, SKILL_REGISTRY } from "../data";
 import type { EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
@@ -79,9 +79,9 @@ export const battleScreen: ScreenModule = (root, game) => {
 
           <div id="player-row" style="display:flex;align-items:flex-end;justify-content:center;gap:var(--space-3);">
             <div id="player-portrait" class="arena-portrait">
-              ${playerAuraHtml(rankForLevel(game.state.player.level))}
+              ${playerAuraHtml(game.state.player.rank)}
               <div id="player-glow" class="impact-glow"></div>
-              <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait(rankForLevel(game.state.player.level))}</div>
+              <div class="lighten" style="width:100%;height:100%;border-radius:50%;overflow:hidden;">${hunterPortrait(game.state.player.rank)}</div>
               <div id="player-vfx" class="vfx-layer" style="display:none;">
                 <div class="slash-bar"></div><div class="slash-bar"></div><div class="slash-bar"></div>
                 <div class="power-ring"></div>
@@ -325,10 +325,11 @@ export const battleScreen: ScreenModule = (root, game) => {
 
     // The portrait's own art is only drawn once at mount (regenerating its
     // SVG mid-battle would risk cutting off whatever's animating on it
-    // right now) - but a rank-up crossing a rank boundary mid-fight is real,
-    // so the aura wrapped around it still tracks rank live, cheaply (just a
-    // CSS var + class, no DOM rebuild).
-    const rank = rankForLevel(p.level);
+    // right now) - but a promotion mid-fight is real (the confirmed rank
+    // can change the instant a Promotion Exam's boss falls), so the aura
+    // wrapped around it still tracks rank live, cheaply (just a CSS var +
+    // class, no DOM rebuild).
+    const rank = p.rank;
     if (rank !== renderedPlayerRank) {
       renderedPlayerRank = rank;
       const aura = playerPortrait.querySelector<HTMLElement>(".player-aura");
@@ -518,6 +519,15 @@ export const battleScreen: ScreenModule = (root, game) => {
         resultTitle.style.color = "var(--color-accent-300)";
         resultSubtitle.textContent = "Gate cleared - the boss has fallen.";
         ariseBtn.style.display = "inline-flex";
+        continueBtn.textContent = "Continue";
+      } else if (b.result === "exam-pass") {
+        resultTitle.textContent = "Promoted!";
+        resultTitle.style.color = "#fef6e4";
+        resultSubtitle.textContent = `Officially recognized as ${game.state.player.rank}-Rank.`;
+        // No Arise - the exam's Proctor isn't a monster to command as a
+        // Shadow, and ariseShadow() already refuses a non-wave-clear/
+        // gate-clear result regardless.
+        ariseBtn.style.display = "none";
         continueBtn.textContent = "Continue";
       } else {
         resultTitle.textContent = "Wave Cleared";

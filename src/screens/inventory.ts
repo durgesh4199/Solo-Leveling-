@@ -2,7 +2,7 @@ import type { Game } from "../store";
 import type { ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { hunterPortrait } from "../art/portraits";
-import { POTIONS, RARITY_META, affixDeltaText, affixText, compareItemAffixes, priceForItem, rankForLevel, sellPriceForItem } from "../data";
+import { POTIONS, RARITY_META, affixDeltaText, affixText, compareItemAffixes, priceForItem, sellPriceForItem } from "../data";
 import type { ItemRarity, ItemSlot, LootItem } from "../types";
 
 const SLOT_LABEL: Record<ItemSlot, string> = {
@@ -173,7 +173,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
         <div class="paperdoll">
           <div class="paperdoll-line-h"></div>
           <div class="paperdoll-line-v"></div>
-          <div class="paperdoll-center" style="grid-column:2;grid-row:2;">${hunterPortrait(rankForLevel(p.level))}</div>
+          <div class="paperdoll-center" style="grid-column:2;grid-row:2;">${hunterPortrait(p.rank)}</div>
           ${paperdollSlots}
         </div>
       </div>

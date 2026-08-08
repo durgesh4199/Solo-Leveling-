@@ -12,6 +12,7 @@ import { SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_NAME_MAX_LENGTH, SHADOW
 import { TALENT_POINTS_PER_LEVEL, TALENT_REGISTRY, canUnlockTalent, talentCritFlat, talentGoldPct, talentStatPct, talentXpPct } from "./systems/talents/data";
 import { CLASS_REGISTRY, CLASS_UNLOCK_LEVEL } from "./systems/classes/data";
 import type { HunterClassDef } from "./systems/classes/types";
+import { EXAM_GATE_ID, PROMOTION_REWARD, examEligibleRank as computeExamEligibleRank, nextRank } from "./systems/exams/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -39,7 +40,7 @@ const INITIAL_STATE: GameState = {
     name: "Hunter", level: 1, xp: 0, xpToNext: 80,
     hp: 100, maxHp: 100, mp: 30, maxMp: 30,
     statPoints: 0, str: 10, agi: 10, int: 10, vit: 10, per: 10,
-    gold: 0, equipment: {}, hunterClass: null
+    gold: 0, equipment: {}, hunterClass: null, rank: "E"
   },
   gatesCleared: {},
   shadowArmy: [],
@@ -259,7 +260,12 @@ export class Game {
     this.pendingSave = null;
     this.state = {
       ...this.state,
-      player: saved.player,
+      // Older saves predate PlayerState.rank (#10) - unlike hunterClass
+      // (where a missing field safely reads as "none chosen"), rank has
+      // no meaningful falsy state, so it's backfilled from the Hunter's
+      // current level rather than defaulting to a bare "E" that would
+      // wrongly demote an already-leveled character.
+      player: { ...saved.player, rank: saved.player.rank ?? rankForLevel(saved.player.level) },
       gatesCleared: saved.gatesCleared,
       // Older saves predate evolutionStage (#6) and equipment (#7) -
       // default them rather than leaving them undefined on a record read
@@ -335,7 +341,10 @@ export class Game {
     return {
       counters: this.state.progress.counters,
       level: p.level,
-      rank: rankForLevel(p.level),
+      // Confirmed rank (#10), not the level-implied one - "Reach S-Rank"
+      // means officially confirmed as S-Rank, not merely leveled enough
+      // to be eligible for the exam.
+      rank: p.rank,
       shadowCount: this.state.shadowArmy.length,
       gatesClearedCount: Object.values(this.state.gatesCleared).filter(Boolean).length,
       gold: p.gold
@@ -953,12 +962,69 @@ export class Game {
   private onWaveCleared(battle: BattleState) {
     const deployed = this.state.shadowArmy.find((s) => s.deployed);
     if (deployed) this.growShadowLoyalty(deployed.id);
+    const gate = GATE_REGISTRY.get(battle.gateId);
+    if (battle.isBossWave && gate?.isPromotionExam) {
+      this.completePromotionExam(battle, gate);
+      return;
+    }
     if (battle.isBossWave) {
       this.state.gatesCleared = { ...this.state.gatesCleared, [battle.gateId]: true };
       this.state.battle = { ...battle, over: true, result: "gate-clear", locked: false };
     } else {
       this.state.battle = { ...battle, over: true, result: "wave-clear", locked: false };
     }
+    this.notify();
+  }
+
+  /** Item #10 of the fixed roadmap. Which rank tier a Promotion Exam is
+   *  currently available for, or null if none is - see
+   *  systems/exams/data.ts's examEligibleRank for the level-vs-confirmed-
+   *  rank gap this closes one tier at a time. Public - the Gates screen
+   *  uses this to show/hide the exam banner. */
+  examEligibleRank(): Rank | null {
+    return computeExamEligibleRank(this.state.player.rank, this.state.player.level);
+  }
+
+  /** Begins the single-boss "trial" battle for whichever rank the Hunter
+   *  is currently exam-eligible for - a no-op (returns false) if not
+   *  currently eligible. Reuses `startBattle` completely unchanged: a
+   *  Promotion Exam is just a `GateDef` flagged `isPromotionExam`
+   *  (EXAM_GATES_DATA in data.ts), so the whole battle engine - combat,
+   *  loot, XP - already works for it with zero special-casing there.
+   *  What's special only happens on victory, in completePromotionExam. */
+  startPromotionExam(): boolean {
+    const rank = this.examEligibleRank();
+    const gateId = rank ? EXAM_GATE_ID[rank] : undefined;
+    const gate = gateId ? GATE_REGISTRY.get(gateId) : undefined;
+    if (!gate) return false;
+    this.startBattle(gate);
+    return true;
+  }
+
+  /** Defeating an exam's boss confirms the Hunter's rank one tier up
+   *  (`PlayerState.rank`, not just the level-implied one) and pays out a
+   *  one-time gold + stat point reward on top of whatever the fight
+   *  itself already granted (XP/gold/loot via the normal applyDamage/
+   *  grantKillRewards path, which already ran before this is called).
+   *  The `nextRank` re-check guards against a stale battle instance
+   *  somehow completing after the Hunter was already promoted some other
+   *  way - if so, this just closes out the battle without promoting or
+   *  paying out again. Deliberately does *not* mark the exam gate in
+   *  `gatesCleared` - it isn't one of the 20 explorable gates the "clear
+   *  every gate" Title/Achievement conditions count. */
+  private completePromotionExam(battle: BattleState, gate: GateDef) {
+    const newRank = gate.rank;
+    if (nextRank(this.state.player.rank) === newRank) {
+      const reward = PROMOTION_REWARD[newRank];
+      this.state.player = {
+        ...this.state.player,
+        rank: newRank,
+        gold: this.state.player.gold + (reward?.gold ?? 0),
+        statPoints: this.state.player.statPoints + (reward?.statPoints ?? 0)
+      };
+      this.showGlobalToast(`Promoted to ${newRank}-Rank Hunter!`, "promotion");
+    }
+    this.state.battle = { ...battle, over: true, result: "exam-pass", locked: false };
     this.notify();
   }
 
@@ -1249,7 +1315,9 @@ export class Game {
   ariseShadow() {
     const battle = this.state.battle;
     if (!battle || (battle.result !== "wave-clear" && battle.result !== "gate-clear")) return;
-    const rank = rankForLevel(this.state.player.level);
+    // Confirmed rank (#10) - a Shadow arises at your officially recognized
+    // strength, not merely what your level alone would qualify for.
+    const rank = this.state.player.rank;
     const sourceName = battle.enemies[0]?.name ?? "Unknown";
     const shadow: ShadowRecord = {
       id: `${battle.gateId}-w${battle.waveIndex}-${Date.now()}`,
@@ -1511,16 +1579,18 @@ export class Game {
     this.notify();
   }
 
-  /** Rerolls the Shop's equipment stock at the player's current rank.
-   *  `free` skips the gold cost - used for the very first stock and the
-   *  automatic 10-minute restock. Either way it resets the restock clock. */
+  /** Rerolls the Shop's equipment stock at the player's *confirmed* rank
+   *  (#10) - stock quality is gated the same way everything else keying
+   *  off rank now is, an unfinished Promotion Exam holds it back same as
+   *  a Shadow's rank or the portrait's aura. `free` skips the gold cost -
+   *  used for the very first stock and the automatic 10-minute restock.
+   *  Either way it resets the restock clock. */
   rerollShop(free = false) {
     if (!free) {
       if (this.state.player.gold < this.state.shop.rerollCost) return;
       this.state.player = { ...this.state.player, gold: this.state.player.gold - this.state.shop.rerollCost };
     }
-    const rank = rankForLevel(this.state.player.level);
-    this.state.shop = { ...this.state.shop, stock: rollShopStock(rank), lastRerollAt: Date.now() };
+    this.state.shop = { ...this.state.shop, stock: rollShopStock(this.state.player.rank), lastRerollAt: Date.now() };
     this.notify();
   }
 
@@ -1556,13 +1626,20 @@ export class Game {
     this.notify();
   }
 
+  /** The 20 explorable gates for the Gates screen's normal list - the 5
+   *  Promotion Exam trials (#10) live in the same `GATE_REGISTRY` (so
+   *  `startBattle`/`getGate`/loot lookups all still resolve them by id
+   *  unchanged) but are filtered out here, since they're not something
+   *  you browse and pick - see `examEligibleRank()`/`startPromotionExam()`
+   *  for how those actually surface. */
   get gates(): GateDef[] {
-    return GATE_REGISTRY.all() as GateDef[];
+    return (GATE_REGISTRY.all() as GateDef[]).filter((g) => !g.isPromotionExam);
   }
 
   /** O(1) gate-by-id lookup for the UI (e.g. the Gates screen resolving a
    *  clicked row's id back to its GateDef) - the same registry startBattle
-   *  and grantKillRewards already use internally. */
+   *  and grantKillRewards already use internally. Covers exam gates too,
+   *  even though `gates` above hides them from the normal list. */
   getGate(id: string): GateDef | undefined {
     return GATE_REGISTRY.get(id);
   }

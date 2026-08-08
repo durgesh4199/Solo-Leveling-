@@ -1,7 +1,7 @@
 import type { Game } from "../store";
 import type { ScreenController, ScreenModule } from "./types";
 import { icon } from "../art/icons";
-import { rankForLevel, STAT_DEFS, STAT_TUNING } from "../data";
+import { STAT_DEFS, STAT_TUNING } from "../data";
 import type { StatKey } from "../types";
 import { TITLES } from "../systems/titles/data";
 import { ACHIEVEMENTS } from "../systems/achievements/data";
@@ -403,7 +403,7 @@ export const statsScreen: ScreenModule = (root, game) => {
     statusController = null;
 
     const p = game.state.player;
-    const rank = rankForLevel(p.level);
+    const rank = p.rank;
     root.innerHTML = `
       <div style="padding:var(--space-6) var(--space-6) 0;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-1);">

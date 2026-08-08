@@ -46,7 +46,11 @@ export const titleScreen: ScreenModule = (root, game) => {
     const hasSave = saved !== null;
     if (!hasSave) confirmingNewHunter = false;
     const p = hasSave ? saved!.player : game.state.player;
-    const rank = rankForLevel(p.level);
+    // A save from before #10 (Promotion Exams) has no `rank` field at
+    // all yet - continueSave() backfills it properly the moment this
+    // save is actually applied, but this is a *preview* of not-yet-
+    // applied data, so fall back the same way for display here too.
+    const rank = p.rank ?? rankForLevel(p.level);
 
     const summaryLine = hasSave
       ? `<div style="font-size:12px;color:var(--color-accent-300);margin-top:2px;">Continue to resume this Hunter</div>`

@@ -42,6 +42,21 @@ export interface PlayerState {
    *  requiring a strict `=== null` (no migration/backfill needed since
    *  `PlayerState` is already persisted whole). */
   hunterClass: HunterClassId | null;
+  /** The Hunter's *officially confirmed* rank (#10, Promotion Exams) -
+   *  distinct from `rankForLevel(level)` in data.ts, which is only the
+   *  rank a Hunter's level alone would *qualify* them to test for. Every
+   *  gameplay/display use of "what rank is this Hunter" (Shop stock
+   *  quality, a newly-Arisen Shadow's rank, the portrait aura/rank tag,
+   *  "reach rank X" Title/Achievement conditions) reads this field, not
+   *  `rankForLevel` - a Hunter stays at their last confirmed rank, no
+   *  matter how far level races ahead, until they pass the next
+   *  Promotion Exam (see Game.completePromotionExam in store.ts).
+   *  Unlike `hunterClass`, an old save predating this field can't just
+   *  treat a missing value as a safe default (there's no falsy "no rank"
+   *  state) - `continueSave()` backfills it from `rankForLevel(level)`
+   *  instead, so an existing character keeps the rank their level
+   *  already implied rather than being knocked back to E. */
+  rank: Rank;
 }
 
 export interface GateDef {
@@ -58,6 +73,12 @@ export interface GateDef {
   baseAtk: number;
   baseDef: number;
   xp: number;
+  /** Marks one of the 5 Promotion Exam trial gates (#10, EXAM_GATES_DATA
+   *  in data.ts) rather than one of the 20 explorable gates - collapses
+   *  `totalEnemiesForGate` to a solo boss fight (see data.ts) and routes
+   *  a boss kill through `Game.completePromotionExam` instead of the
+   *  normal gate-clear path. Absent/false for every explorable gate. */
+  isPromotionExam?: boolean;
 }
 
 export interface WavePlanEntry {
@@ -219,7 +240,7 @@ export interface BattleToast {
   rarity?: ItemRarity;
 }
 
-export type BattleResult = "wave-clear" | "gate-clear" | "defeat" | null;
+export type BattleResult = "wave-clear" | "gate-clear" | "defeat" | "exam-pass" | null;
 
 export interface BattleState {
   gateId: string;
@@ -293,7 +314,7 @@ export interface TalentState {
 export interface GlobalToast {
   id: number;
   text: string;
-  kind: "achievement" | "title" | "info" | "shadow";
+  kind: "achievement" | "title" | "info" | "shadow" | "promotion";
 }
 
 export interface GameState {

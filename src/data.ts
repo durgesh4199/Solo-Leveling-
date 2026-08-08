@@ -78,11 +78,34 @@ export const GATES_DATA: GateDef[] = [
   gate("g20", "S", "Worldless Throne", 1, 29, 375, 37, 16, 225)
 ];
 
+/** Promotion Exams (#10) - one single-boss "trial" gate per rank tier
+ *  above E, flagged `isPromotionExam` so `totalEnemiesForGate` collapses
+ *  them to a solo boss fight with no trash waves. Kept in their own array
+ *  rather than mixed into `GATES_DATA` (which the Gates screen's normal
+ *  list renders as-is, unfiltered) - a Promotion Exam isn't an
+ *  explorable gate, it's a one-time rank-gated trial offered separately
+ *  (see Game.examEligibleRank/startPromotionExam in store.ts). Stat
+ *  baselines are hand-tuned a notch above the first gate of the rank
+ *  being left behind, so the trial reads as "harder than what you've
+ *  been fighting", not a formality. `enemyTypes` is unused (boss-only
+ *  fights never read it - see makeEnemies in store.ts) so it's left
+ *  empty rather than populated with dead data. */
+export const EXAM_GATES_DATA: GateDef[] = [
+  { id: "exam_d", rank: "D", name: "D-Rank Promotion Trial", enemyTypes: [], bossName: "D-Rank Proctor", recommendedLevel: 4, baseHp: 110, baseAtk: 13, baseDef: 2, xp: 60, isPromotionExam: true },
+  { id: "exam_c", rank: "C", name: "C-Rank Promotion Trial", enemyTypes: [], bossName: "C-Rank Proctor", recommendedLevel: 8, baseHp: 165, baseAtk: 18, baseDef: 5, xp: 95, isPromotionExam: true },
+  { id: "exam_b", rank: "B", name: "B-Rank Promotion Trial", enemyTypes: [], bossName: "B-Rank Proctor", recommendedLevel: 13, baseHp: 230, baseAtk: 24, baseDef: 8, xp: 135, isPromotionExam: true },
+  { id: "exam_a", rank: "A", name: "A-Rank Promotion Trial", enemyTypes: [], bossName: "A-Rank Proctor", recommendedLevel: 19, baseHp: 305, baseAtk: 31, baseDef: 12, xp: 190, isPromotionExam: true },
+  { id: "exam_s", rank: "S", name: "S-Rank Promotion Trial", enemyTypes: [], bossName: "S-Rank Proctor", recommendedLevel: 26, baseHp: 400, baseAtk: 40, baseDef: 17, xp: 260, isPromotionExam: true }
+];
+
 /** O(1) gate-by-id lookup - store.ts previously re-scanned GATES_DATA with
  *  `.find()` at every call site that needed "the gate this battle belongs
  *  to"; this also throws at load time if a gate id is ever duplicated,
- *  which a plain array + `.find()` would instead let through silently. */
-export const GATE_REGISTRY: Registry<GateDef> = createRegistry(GATES_DATA, (g) => g.id, "Gate");
+ *  which a plain array + `.find()` would instead let through silently.
+ *  Covers both the 20 explorable gates and the 5 Promotion Exam trials so
+ *  every existing `GATE_REGISTRY.get(battle.gateId)` call site keeps
+ *  working unchanged for an exam battle too. */
+export const GATE_REGISTRY: Registry<GateDef> = createRegistry([...GATES_DATA, ...EXAM_GATES_DATA], (g) => g.id, "Gate");
 
 /** A trash unit's species (one of its gate's 5 enemyTypes, picked at
  *  random per spawn - see makeEnemies in store.ts) also picks which of
@@ -107,7 +130,10 @@ export const TOTAL_ENEMIES_BY_RANK: Record<Rank, number> = {
 /** Enemies fought simultaneously in one non-boss wave. */
 export const GROUP_SIZE = 3;
 
+/** A Promotion Exam (#10) is a single solo boss trial, no trash waves -
+ *  overrides the normal rank-based enemy count down to just the boss. */
 export function totalEnemiesForGate(gate: GateDef): number {
+  if (gate.isPromotionExam) return 1;
   return TOTAL_ENEMIES_BY_RANK[gate.rank];
 }
 

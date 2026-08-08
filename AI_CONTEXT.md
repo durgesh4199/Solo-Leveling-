@@ -126,6 +126,11 @@ field different rosters. Each trash spawn also rolls a stat-weight
 `TYPE_VARIANT` (glass-cannon/tanky/balanced/...) tied to which of the 5
 species it got, so "5 different types" is a real combat difference.
 
+A **Promotion Exam** banner (#10) appears above the 20-gate list whenever
+level has raced ahead of confirmed rank (`Game.examEligibleRank()`) - a
+single, tougher solo boss trial, not one of the 20 explorable gates (see
+"Promotion Exams" below).
+
 **Battle** — turn-based, auto-targets the frontmost living enemy
 (indicated by an underline on its name label, not the old portrait-edge
 line which used to visually collide with the name once per-unit labels
@@ -539,6 +544,81 @@ pulses gold whenever it increases).
   alone wouldn't catch a bug where the *shared* multiplier accidentally
   got read from companionStrike too.
 
+## Promotion Exams (Phase 3 item #10 of EXPANSION_ROADMAP.md)
+
+- **`rankForLevel(level)` vs `PlayerState.rank`**: this is the core split
+  this item introduces, and it matters for *any* future code touching
+  rank. `rankForLevel` (data.ts, unchanged) is a pure function of level -
+  "what rank would this level alone imply." `player.rank` is the
+  Hunter's officially confirmed rank, changed only by
+  `Game.completePromotionExam`. **Every rank-driven gameplay/display site
+  reads `player.rank` now, not `rankForLevel(player.level)`** -
+  `rerollShop` (Shop stock quality), `ariseShadow` (a new Shadow's rank/
+  power), `progressContext` (Title/Achievement "reach rank X"
+  conditions), and every screen that draws the portrait aura or a rank
+  tag (`battle.ts`, `stats.ts`, `title.ts`, `inventory.ts`).
+  `rankForLevel` itself is now only consulted for *eligibility* -
+  computing the gap between level and confirmed rank.
+- **A Promotion Exam is a real `GateDef`, not a separate battle mode**:
+  `EXAM_GATES_DATA` (data.ts) - 5 entries, one per rank D-S, flagged
+  `isPromotionExam: true`. `totalEnemiesForGate` checks that flag first
+  and returns `1` (collapsing `buildWavePlan` to a single boss-only wave,
+  no trash) before falling through to the normal rank-based lookup. This
+  is what lets `Game.startBattle` run an exam with *zero* changes to the
+  battle engine itself - it's just a gate whose "trash count" happens to
+  be zero. `Game.gates` (the getter the Gates screen's normal list reads)
+  filters these back out; `GATE_REGISTRY`/`Game.getGate` still resolve
+  them by id, so every existing id-based lookup keeps working unchanged.
+- **`systems/exams/data.ts`** is the smallest system module so far - no
+  `types.ts` at all, since an exam has no novel content shape beyond the
+  `GateDef` it already reuses. Just `nextRank`/`examEligibleRank` (a
+  local `RANK_ORDER` ladder, same small-duplication precedent as
+  `nextShadowRank`), `EXAM_GATE_ID` (rank -> gate id), and
+  `PROMOTION_REWARD` (rank -> gold/statPoints). A system this thin is a
+  legitimate shape - don't force an empty `types.ts` on a future system
+  just for consistency if it genuinely has nothing new to define there.
+- **`Game.completePromotionExam`** is called from `onWaveCleared` when
+  the cleared gate's `isPromotionExam` is true (checked *before* the
+  normal `battle.isBossWave` branch, since an exam's single wave is
+  always flagged as the boss wave too - the exam check has to come
+  first or it'd silently fall through to the normal gate-clear path).
+  The reward it pays is deliberately *on top of* the fight's own normal
+  kill reward (already applied by the time `onWaveCleared` runs) and on
+  top of whatever `refreshProgress()` grants for a "reach rank X"
+  condition the promotion itself may have just satisfied - all three are
+  expected to stack, not something to guard against. Guards against
+  double-promotion with a `nextRank(player.rank) === gate.rank` check
+  before actually applying anything, in case a stale battle instance
+  somehow resolves after the Hunter was already promoted some other way.
+- **New `BattleResult` value**: `"exam-pass"`, distinct from
+  `"gate-clear"` specifically so `battle.ts`'s result panel can hide the
+  Arise button and show "Promoted!" instead of "Gate Cleared" -
+  `continueAfterWave()` needed *no* change, since its `if (result ===
+  "wave-clear") advanceWave(); else retreatBattle();` branch already
+  treats anything that isn't `"wave-clear"` as "go back to Gates", which
+  is exactly right for an exam pass too.
+- **Save migration precedent, a third variant**: #8's `talents` (a whole
+  new top-level slice, missing entirely on old saves) got a one-time
+  catch-up grant; #9's `hunterClass` (a new field with a genuinely falsy
+  "not set" state) needed no migration at all. `rank` is a third case -
+  a new field on an already-fully-persisted object (`PlayerState`, like
+  `hunterClass`) but *without* a safe falsy default (unlike
+  `hunterClass`, "no rank" isn't a valid state) - so it gets
+  `continueSave()`-time backfill from `rankForLevel(level)`, like #6/#7's
+  pattern but on a scalar instead of an array. Pick whichever of these
+  three matches a future field's actual shape rather than reaching for
+  one out of habit.
+- **Testing note**: a live `Game`'s `startPromotionExam()` +
+  `battleAttack()` (with `player.str` pushed absurdly high, or the
+  target's `hp` set to 1, for a guaranteed one-shot kill) is how to drive
+  a full exam win in a test without needing deterministic RNG for the
+  fight itself. Asserting the reward payout needs `>=`, not `===` -
+  the kill's own normal XP/gold and a "reach rank X" Achievement/Title
+  auto-unlocking via `refreshProgress()` both add on top of
+  `PROMOTION_REWARD`'s numbers by design (see completePromotionExam's
+  note above); an exact-equality assertion here is a test bug, not a
+  sign the game under- or over-paid.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -613,7 +693,7 @@ Arise, level-up, dissolve).
   **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture ✅ →
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
-  Tree ✅ → Hunter Classes ✅ → Promotion Exams → Dungeon Modifiers →
+  Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers →
   Random Events → Better Enemy AI → Crafting → Relics → Equipment Sets →
   Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always check
   that file for current status before starting any expansion work -
