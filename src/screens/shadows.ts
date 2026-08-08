@@ -108,26 +108,28 @@ export const shadowsScreen: ScreenModule = (root, game) => {
 
       const nameRow = renamingId === shadow.id
         ? `
-          <div style="display:flex;gap:4px;align-items:center;">
-            <input type="text" class="rename-input" data-id="${shadow.id}" value="${escapeAttr(shadow.name)}" maxlength="${SHADOW_NAME_MAX_LENGTH}" style="flex:1;min-width:0;background:var(--color-neutral-900);border:1px solid var(--color-accent-600);border-radius:6px;color:var(--color-neutral-100);font-size:13px;padding:4px 6px;" />
-            <button class="btn btn-icon" style="width:24px;height:24px;flex-shrink:0;color:var(--color-accent-300);" data-action="save-rename" data-id="${shadow.id}" title="Save">${icon("check-circle")}</button>
-            <button class="btn btn-icon" style="width:24px;height:24px;flex-shrink:0;" data-action="cancel-rename" title="Cancel">${icon("arrow-left")}</button>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <input type="text" class="rename-input" data-id="${shadow.id}" value="${escapeAttr(shadow.name)}" maxlength="${SHADOW_NAME_MAX_LENGTH}" style="width:100%;box-sizing:border-box;background:var(--color-neutral-900);border:1px solid var(--color-accent-600);border-radius:5px;color:var(--color-neutral-100);font-size:10px;padding:3px 4px;" />
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-icon" style="flex:1;height:18px;color:var(--color-neutral-400);" data-action="cancel-rename" title="Cancel">${icon("arrow-left")}</button>
+              <button class="btn btn-icon" style="flex:1;height:18px;color:var(--color-accent-300);" data-action="save-rename" data-id="${shadow.id}" title="Save">${icon("check-circle")}</button>
+            </div>
           </div>`
         : `
-          <div style="display:flex;align-items:center;gap:6px;">
-            <div style="font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${shadow.name}</div>
-            <button class="btn btn-icon" style="width:20px;height:20px;flex-shrink:0;color:var(--color-neutral-500);" data-action="start-rename" data-id="${shadow.id}" title="Rename">${icon("pencil")}</button>
+          <div style="display:flex;align-items:center;gap:4px;">
+            <div style="font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0;">${shadow.name}</div>
+            <button class="btn btn-icon" style="width:15px;height:15px;flex-shrink:0;color:var(--color-neutral-500);" data-action="start-rename" data-id="${shadow.id}" title="Rename">${icon("pencil")}</button>
           </div>`;
 
       const mergeAction = merging
         ? `
-          <div style="font-size:11px;color:var(--color-accent-300);text-align:center;">Merge with ${duplicate?.name} (Lv ${duplicate?.level})? It will be consumed.</div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="cancel-merge">Cancel</button>
-            <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="confirm-merge" data-id="${shadow.id}">Confirm</button>
+          <div style="font-size:9px;color:var(--color-accent-300);">Merge with ${duplicate?.name} (Lv ${duplicate?.level})? Consumed permanently.</div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:4px;font-size:9px;" data-action="cancel-merge">Cancel</button>
+            <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:4px;font-size:9px;" data-action="confirm-merge" data-id="${shadow.id}">Confirm</button>
           </div>`
         : duplicate
-        ? `<button class="btn btn-secondary action-btn" style="justify-content:center;padding:6px;font-size:11px;" data-action="merge-shadow" data-id="${shadow.id}" title="Merge with your weakest ${shadow.type} duplicate">${icon("sparkles")} Merge Duplicate</button>`
+        ? `<button class="btn btn-secondary action-btn" style="justify-content:center;padding:4px;font-size:9px;" data-action="merge-shadow" data-id="${shadow.id}" title="Merge with your weakest ${shadow.type} duplicate">${icon("sparkles")} Merge</button>`
         : "";
 
       // Evolve only ever surfaces once a Shadow has earned it (maxed
@@ -140,13 +142,13 @@ export const shadowsScreen: ScreenModule = (root, game) => {
 
       const evolveAction = evolving && evolveRank
         ? `
-          <div style="font-size:11px;color:var(--color-accent-300);text-align:center;">Evolve into a ${evolveRank}-Rank Shadow for ${evolveCost}g? Level resets to 1.</div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="cancel-evolve">Cancel</button>
-            <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="confirm-evolve" data-id="${shadow.id}" ${canAffordEvolve ? "" : "disabled"}>Confirm</button>
+          <div style="font-size:9px;color:var(--color-accent-300);">Evolve to ${evolveRank}-Rank for ${evolveCost}g? Level resets to 1.</div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:4px;font-size:9px;" data-action="cancel-evolve">Cancel</button>
+            <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:4px;font-size:9px;" data-action="confirm-evolve" data-id="${shadow.id}" ${canAffordEvolve ? "" : "disabled"}>Confirm</button>
           </div>`
         : evolveRank
-        ? `<button class="btn btn-secondary action-btn" style="justify-content:center;padding:6px;font-size:11px;${canAffordEvolve ? "" : "opacity:0.55;"}" data-action="evolve-shadow" data-id="${shadow.id}" title="${canAffordEvolve ? `Evolve into a ${evolveRank}-Rank Shadow` : `Need ${evolveCost}g to evolve (have ${game.state.player.gold}g)`}">${icon("lightning")} Evolve to ${evolveRank}-Rank · ${evolveCost}g</button>`
+        ? `<button class="btn btn-secondary action-btn" style="justify-content:center;padding:4px;font-size:9px;${canAffordEvolve ? "" : "opacity:0.55;"}" data-action="evolve-shadow" data-id="${shadow.id}" title="${canAffordEvolve ? `Evolve into a ${evolveRank}-Rank Shadow` : `Need ${evolveCost}g to evolve (have ${game.state.player.gold}g)`}">${icon("lightning")} Evolve · ${evolveCost}g</button>`
         : "";
 
       // Gear panel (#7 - Shadow Management UI). Same Bag/LootItem system
@@ -162,18 +164,15 @@ export const shadowsScreen: ScreenModule = (root, game) => {
           : [];
 
         const picker = pickerOpen
-          ? `<div style="display:flex;flex-direction:column;gap:4px;padding:4px 0 4px 22px;">
+          ? `<div style="display:flex;flex-direction:column;gap:3px;padding:3px 0 3px 10px;">
               ${eligible.length === 0
-                ? `<div style="font-size:10px;color:var(--color-neutral-600);">No ${SLOT_LABEL[slot]} items in your Bag.</div>`
+                ? `<div style="font-size:8px;color:var(--color-neutral-600);">No ${SLOT_LABEL[slot]} items in Bag.</div>`
                 : eligible.map((i) => {
                     const m = RARITY_META[i.rarity];
                     return `
-                      <div style="display:flex;align-items:center;gap:6px;">
-                        <div style="flex:1;min-width:0;">
-                          <div style="font-size:10px;color:${m.color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.name}</div>
-                          <div style="font-size:9px;color:var(--color-neutral-600);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${affixSummary(i)}</div>
-                        </div>
-                        <button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:3px 6px;font-size:10px;" data-action="equip-shadow-item" data-id="${shadow.id}" data-item="${i.id}">Equip</button>
+                      <div style="display:flex;flex-direction:column;gap:2px;">
+                        <div style="font-size:8px;color:${m.color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${i.name}</div>
+                        <button class="btn btn-secondary action-btn" style="justify-content:center;padding:2px 4px;font-size:8px;" data-action="equip-shadow-item" data-id="${shadow.id}" data-item="${i.id}">Equip</button>
                       </div>`;
                   }).join("")}
             </div>`
@@ -181,16 +180,16 @@ export const shadowsScreen: ScreenModule = (root, game) => {
 
         return `
           <div>
-            <div style="display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px dashed var(--color-neutral-800);">
-              <span style="color:var(--color-neutral-500);width:16px;text-align:center;flex-shrink:0;">${icon(SLOT_ICON[slot] as any)}</span>
+            <div style="display:flex;align-items:center;gap:3px;padding:3px 0;border-bottom:1px dashed var(--color-neutral-800);">
+              <span style="color:var(--color-neutral-500);width:12px;text-align:center;flex-shrink:0;font-size:9px;">${icon(SLOT_ICON[slot] as any)}</span>
               <div style="flex:1;min-width:0;">
                 ${item && meta
-                  ? `<div style="font-size:11px;color:${meta.color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>`
-                  : `<div style="font-size:11px;color:var(--color-neutral-600);">${SLOT_LABEL[slot]} — Empty</div>`}
+                  ? `<div style="font-size:8px;color:${meta.color};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.name}</div>`
+                  : `<div style="font-size:8px;color:var(--color-neutral-600);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${SLOT_LABEL[slot]}</div>`}
               </div>
               ${item
-                ? `<button class="btn btn-icon" style="width:22px;height:22px;flex-shrink:0;" data-action="unequip-shadow-item" data-id="${shadow.id}" data-slot="${slot}" title="Unequip">${icon("trash")}</button>`
-                : `<button class="btn btn-icon" style="width:22px;height:22px;flex-shrink:0;color:var(--color-accent-300);" data-action="toggle-shadow-picker" data-id="${shadow.id}" data-slot="${slot}" title="Equip ${SLOT_LABEL[slot]}">${icon("plus")}</button>`}
+                ? `<button class="btn btn-icon" style="width:16px;height:16px;flex-shrink:0;" data-action="unequip-shadow-item" data-id="${shadow.id}" data-slot="${slot}" title="Unequip">${icon("trash")}</button>`
+                : `<button class="btn btn-icon" style="width:16px;height:16px;flex-shrink:0;color:var(--color-accent-300);" data-action="toggle-shadow-picker" data-id="${shadow.id}" data-slot="${slot}" title="Equip ${SLOT_LABEL[slot]}">${icon("plus")}</button>`}
             </div>
             ${picker}
           </div>`;
@@ -201,37 +200,37 @@ export const shadowsScreen: ScreenModule = (root, game) => {
         : "";
 
       return `
-      <div class="card elev-sm" style="padding:var(--space-3);display:flex;flex-direction:column;gap:var(--space-2); ${shadow.deployed ? "box-shadow:0 0 0 1.5px var(--color-accent-400);" : ""}">
-        <div style="width:100%;height:80px;border-radius:8px;overflow:hidden;position:relative;" class="lighten">
+      <div class="card elev-sm" style="flex:0 0 116px;width:116px;max-height:100%;overflow-y:auto;padding:var(--space-2);display:flex;flex-direction:column;gap:6px; ${shadow.deployed ? "box-shadow:0 0 0 1.5px var(--color-accent-400);" : ""}">
+        <div style="width:100%;height:52px;border-radius:6px;overflow:hidden;position:relative;flex-shrink:0;" class="lighten">
           ${shadowPortrait(shadow.rank)}
-          ${shadow.deployed ? `<div style="position:absolute;top:4px;right:4px;background:var(--color-accent-800);color:var(--color-accent-100);font-size:9px;padding:2px 6px;border-radius:4px;">ACTIVE</div>` : ""}
+          ${shadow.deployed ? `<div style="position:absolute;top:2px;right:2px;background:var(--color-accent-800);color:var(--color-accent-100);font-size:7px;padding:1px 4px;border-radius:3px;">ACTIVE</div>` : ""}
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;">
-          <span style="font-size:16px;color:var(--color-accent-300);">${icon("skull")}</span>
-          <div style="display:flex;gap:4px;">
-            ${shadow.evolutionStage > 0 ? `<div class="tag tag-outline" style="font-size:10px;color:var(--color-accent-300);" title="Evolved ${shadow.evolutionStage}x">${icon("lightning")} ${shadow.evolutionStage}</div>` : ""}
-            <div class="tag tag-outline" style="font-size:10px;">${shadow.rank}</div>
+          <span style="font-size:13px;color:var(--color-accent-300);">${icon("skull")}</span>
+          <div style="display:flex;gap:3px;">
+            ${shadow.evolutionStage > 0 ? `<div class="tag tag-outline" style="font-size:8px;padding:1px 4px;color:var(--color-accent-300);" title="Evolved ${shadow.evolutionStage}x">${icon("lightning")} ${shadow.evolutionStage}</div>` : ""}
+            <div class="tag tag-outline" style="font-size:8px;padding:1px 4px;">${shadow.rank}</div>
           </div>
         </div>
         ${nameRow}
-        <div style="font-size:11px;color:var(--color-neutral-500);">${shadow.type} · Power ${power}</div>
+        <div style="font-size:9px;color:var(--color-neutral-500);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${shadow.type} · Pwr ${power}</div>
 
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--color-neutral-500);">
+        <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--color-neutral-500);">
           <span>Lv ${shadow.level}${maxed ? " (Max)" : ""}</span>
-          <span title="${mood.label} · Loyalty ${shadow.loyalty}/100">${icon(mood.icon as any)} ${mood.label}</span>
+          <span title="${mood.label} · Loyalty ${shadow.loyalty}/100">${icon(mood.icon as any)}</span>
         </div>
-        <div class="bar-track" style="height:4px;"><div class="bar-fill" style="background:var(--color-accent-500);width:${maxed ? 100 : Math.round((shadow.xp / xpToNext) * 100)}%;"></div></div>
+        <div class="bar-track" style="height:3px;"><div class="bar-fill" style="background:var(--color-accent-500);width:${maxed ? 100 : Math.round((shadow.xp / xpToNext) * 100)}%;"></div></div>
 
         <div style="display:flex;flex-direction:column;gap:2px;padding-top:2px;border-top:1px dashed var(--color-neutral-800);">
-          <div style="font-size:10px;color:var(--color-accent-300);" title="${skills.passive.description}">${icon("shield")} ${skills.passive.name}</div>
-          <div style="font-size:10px;color:var(--color-accent-300);" title="${skills.active.description}">${icon("flame")} ${skills.active.name}</div>
+          <div style="font-size:8px;color:var(--color-accent-300);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${skills.passive.description}">${icon("shield")} ${skills.passive.name}</div>
+          <div style="font-size:8px;color:var(--color-accent-300);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${skills.active.description}">${icon("flame")} ${skills.active.name}</div>
         </div>
 
-        <div style="display:flex;gap:6px;">
-          <button class="btn ${shadow.deployed ? "btn-primary" : "btn-secondary"} action-btn" style="flex:1;justify-content:center;padding:6px;font-size:12px;" data-action="deploy-shadow" data-id="${shadow.id}">
+        <div style="display:flex;gap:4px;">
+          <button class="btn ${shadow.deployed ? "btn-primary" : "btn-secondary"} action-btn" style="flex:1;justify-content:center;padding:4px;font-size:10px;" data-action="deploy-shadow" data-id="${shadow.id}">
             ${shadow.deployed ? "Recall" : "Deploy"}
           </button>
-          <button class="btn ${gearOpen ? "btn-primary" : "btn-secondary"} action-btn" style="padding:6px 8px;font-size:12px;" data-action="toggle-gear" data-id="${shadow.id}" title="Manage Gear">${icon("bag")}</button>
+          <button class="btn ${gearOpen ? "btn-primary" : "btn-secondary"} action-btn" style="padding:4px 6px;font-size:10px;" data-action="toggle-gear" data-id="${shadow.id}" title="Manage Gear">${icon("bag")}</button>
         </div>
         ${gearPanel}
         ${mergeAction}
@@ -241,17 +240,17 @@ export const shadowsScreen: ScreenModule = (root, game) => {
     }).join("");
 
     root.innerHTML = `
-      <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
-        <div>
+      <div style="flex:1;display:flex;flex-direction:column;min-height:0;padding:var(--space-6);gap:var(--space-4);overflow:hidden;">
+        <div style="flex-shrink:0;">
           <h4 style="margin-bottom:var(--space-1);">Shadow Army</h4>
           <div style="font-size:13px;color:var(--color-neutral-400);">
             ${shadowArmy.length} shadows arisen${deployed ? ` · <span style="color:var(--color-accent-300);">${deployed.name} deployed</span>` : ""}
           </div>
         </div>
-        ${filters}
+        <div style="flex-shrink:0;">${filters}</div>
         ${empty}
         ${noMatch}
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3);">${cards}</div>
+        <div style="flex:1;min-height:0;display:flex;align-items:flex-start;gap:var(--space-3);overflow-x:auto;overflow-y:hidden;padding-bottom:6px;">${cards}</div>
       </div>
     `;
 
