@@ -469,10 +469,46 @@ touching anything below.
       field backfilled vs. already-present field left alone).
 
 ### Phase 4 — Content variety
-11. Dungeon Modifiers — pending. *(Note: a first version already exists -
-    `GATE_MODIFIERS`/`GateModifier` in `data.ts`, 5 entries rolled per
-    gate attempt. This item is about expanding it, not building from
-    scratch.)*
+11. **Dungeon Modifiers** — ✅ **Done.** Expanded from 4 real modifiers (+
+    "none") to 11 (+ "none") and, more importantly, from 4 tunable knobs
+    to 7 - `GateModifier` gained `enemyDefMult`, `eliteChanceBonus`, and
+    `goldMult`, none of which any modifier could touch before (nothing
+    previously varied a fight's defense, its odds of fielding an Elite,
+    or its gold reward).
+    - **Three rough tiers**, so the roll itself carries weight, not just
+      the numbers inside each entry: mild/common (Blessed, Bountiful,
+      Swift, **Wealthy** and **Generous** [both new], **Frail** [new] -
+      one knob nudged, no real downside), moderate/risk-reward (Vicious,
+      **Elite Surge**, **Tempered**, **Fortified** [all new] - a real
+      enemy buff paired with a real reward bump), and **Cursed** [new] -
+      the one stacked atk+hp+def buff, deliberately the rarest via the
+      new per-modifier `weight` field (`pickWeightedModifier` in
+      data.ts, the same cumulative-weight technique `rollRarity` already
+      uses for loot tiers) rather than every real modifier being equally
+      likely to come up.
+    - **`eliteChanceBonus`** stacks additively onto the flat 12% base
+      elite-spawn roll, capped at 60% so even Elite Surge never turns a
+      trash wave into an all-Elite wave.
+    - **`enemyDefMult`** applies to both trash and the wave's boss
+      (`makeEnemies`, store.ts) - previously nothing in a `GateModifier`
+      touched defense at all.
+    - **`goldMult`** applies in `grantKillRewards` as its own separate
+      multiplier layered on top of the Title/Talent gold percentage (the
+      same "gear-then-multiplier" ordering `effectiveStat` already
+      uses), defaulting to 1 (a no-op) for every modifier that isn't
+      specifically about gold.
+    - The existing 4 knobs (`xpMult`/`loot`/`enemyAtkMult`/
+      `enemyHpMult`) and the ~40%-chance-of-"none" roll structure are
+      untouched - this is additive, not a rebalance of what already
+      worked.
+    - Verified via a live `Game` instance: `GATE_MODIFIERS` shape/count,
+      "none" is a true no-op across every knob, weighted rolling never
+      returns "none" above the 40% threshold and never returns a real
+      modifier below it, `enemyDefMult` doubling both trash and boss
+      defense exactly, `eliteChanceBonus` measurably raising the elite
+      roll's outcome at a fixed `Math.random` value, `goldMult` applying
+      correctly in `grantKillRewards`, and a `null` battle modifier
+      still behaving as a pre-#11-identical 1x no-op.
 12. Random Events — pending.
 13. Better Enemy AI — pending. *(Note: `decideEnemyAction` already gives
     enemies attack/guard/special decisions with some smarts - HP-based

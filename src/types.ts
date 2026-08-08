@@ -159,7 +159,11 @@ export interface ShadowRecord {
 }
 
 /** Rolled once when a gate run starts - a random modifier that makes each
- *  attempt at the same gate feel different, not a fixed grind. */
+ *  attempt at the same gate feel different, not a fixed grind. #11
+ *  (Dungeon Modifiers) widened this from 4 knobs to 7, and gave each
+ *  non-"none" entry a relative `weight` so the tougher/rarer ones roll
+ *  less often than the mild ones instead of every real modifier being
+ *  equally likely (see rollGateModifier in data.ts). */
 export interface GateModifier {
   key: string;
   label: string;
@@ -168,6 +172,13 @@ export interface GateModifier {
   loot: number; // additive to base loot-drop chance
   enemyAtkMult: number;
   enemyHpMult: number;
+  enemyDefMult: number;
+  eliteChanceBonus: number; // additive to the base per-trash-unit elite chance
+  goldMult: number;
+  /** Relative roll weight among the non-"none" modifiers - unused for
+   *  "none" itself, which is rolled separately (rollGateModifier's own
+   *  flat ~40% chance of an unmodified run). */
+  weight: number;
 }
 
 export type SkillKind = "single" | "cleave" | "execute" | "aoe";

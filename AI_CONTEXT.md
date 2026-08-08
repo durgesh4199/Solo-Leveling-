@@ -118,8 +118,9 @@ portrait, "Enter the System" → Gates.
 enemies (`GROUP_SIZE`) ramping in strength across the whole run, capped by
 a solo boss wave (`buildWavePlan` in data.ts). HP/MP carry over between
 waves within one run — potions are the only mid-run relief. A random
-`GateModifier` (blessed/bountiful/vicious/swift/none) rolls once per
-attempt. Every gate rank has a signature `Archetype` (E=goblin, D=orc,
+`GateModifier` rolls once per attempt (~40% none, otherwise weighted
+among 11 real modifiers - see "Dungeon Modifiers" below). Every gate
+rank has a signature `Archetype` (E=goblin, D=orc,
 C=wraith, B=knight, A=beast, S=wyrm) and each gate's 5 `enemyTypes` are a
 rotated slice of that archetype's 6-name pool, so gates on the same rank
 field different rosters. Each trash spawn also rolls a stat-weight
@@ -619,6 +620,47 @@ pulses gold whenever it increases).
   note above); an exact-equality assertion here is a test bug, not a
   sign the game under- or over-paid.
 
+## Dungeon Modifiers (Phase 4 item #11 of EXPANSION_ROADMAP.md)
+
+- **`GateModifier` grew from 4 knobs to 7**: the original
+  `xpMult`/`loot`/`enemyAtkMult`/`enemyHpMult` untouched, plus
+  `enemyDefMult`, `eliteChanceBonus`, and `goldMult` - nothing before
+  this item could touch a fight's defense, its Elite odds, or its gold
+  at all, so those were the three real gaps to close, not just "add more
+  entries with the same 4 numbers remixed."
+- **`weight` + `pickWeightedModifier`** (data.ts): before this item every
+  non-"none" modifier was equally likely (`pick()`, uniform). Now each
+  entry carries a relative `weight` and `rollGateModifier` uses the same
+  cumulative-weight technique `rollRarity` already uses for loot tiers -
+  mild modifiers (weight 3) come up noticeably more than Cursed (weight
+  1, the one modifier stacking atk+hp+def buffs at once). The ~40%
+  chance of plain "none" is untouched - only the *non-none* branch
+  changed from uniform to weighted.
+- **Where the 3 new knobs actually land**: `enemyDefMult` in
+  `makeEnemies` (store.ts), applied to both the trash formula (alongside
+  the existing per-species `TYPE_VARIANT.defMult`) and the boss formula
+  (which never had *any* modifier-driven def change before).
+  `eliteChanceBonus` also in `makeEnemies` - stacks additively onto the
+  flat 12% base roll, `Math.min(0.6, ...)`-capped so Elite Surge can't
+  turn a whole wave into Elites. `goldMult` in `grantKillRewards`
+  (store.ts), multiplied in *after* the Title/Talent gold percentage is
+  combined (`gold = unit.gold * (1 + goldPct) * goldMult`) - same
+  layering order `effectiveStat` uses for gear-then-multiplier, so a
+  Wealthy Gate and a gold-Title/Talent build stack additively with each
+  other but multiplicatively with the modifier, matching how the rest of
+  the game already separates "sources that add" from "the one multiplier
+  a specific run-level modifier applies."
+- **Testing note**: isolating `enemyDefMult` cleanly needs a fixed low
+  `Math.random()` (e.g. `0.01`) so `makeEnemies`'s per-unit species/
+  variant roll always lands on `TYPE_VARIANTS[0]` (`defMult: 1.0`) -
+  otherwise the variant's *own* independent `defMult` gets multiplied in
+  first, and comparing `buffed.def === base.def * 2` fails on rounding
+  drift between the two separately-rounded values, not a real bug (hit
+  this exact false failure once while testing #11 - fixed by controlling
+  which variant gets picked, not by loosening the assertion). Also worth
+  picking a gate with non-zero `baseDef` for def-mult tests - `g1`'s is
+  literally `0`, which makes `0 === 0 * 2` pass without proving anything.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -693,7 +735,7 @@ Arise, level-up, dissolve).
   **`EXPANSION_ROADMAP.md`**: Save/Load ✅ → data-driven architecture ✅ →
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
-  Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers →
+  Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers ✅ →
   Random Events → Better Enemy AI → Crafting → Relics → Equipment Sets →
   Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always check
   that file for current status before starting any expansion work -

@@ -468,19 +468,51 @@ export function rollShopStock(rank: Rank, count = 6): LootItem[] {
 }
 
 /** Rolled once per gate run - swaps up the risk/reward on every attempt
- *  instead of the same fight playing out identically each time. */
+ *  instead of the same fight playing out identically each time. #11
+ *  (Dungeon Modifiers) expanded this from 4 real entries to 11, spanning
+ *  three rough tiers: mild/common (Blessed, Bountiful, Swift, Wealthy,
+ *  Generous, Frail - one knob nudged, no real downside beyond "less of a
+ *  bonus"), moderate/risk-reward (Vicious, Elite Surge, Tempered,
+ *  Fortified - a real enemy buff paired with a real reward bump), and
+ *  Cursed - the one high-risk/high-reward outlier, deliberately the
+ *  rarest (lowest `weight`) since stacking atk+hp+def buffs is a lot to
+ *  ask for any single gate attempt. `enemyDefMult`/`eliteChanceBonus`/
+ *  `goldMult` are the 3 new knobs beyond the original 4 - nothing
+ *  previously touched a fight's defense, elite odds, or gold at all. */
 export const GATE_MODIFIERS: GateModifier[] = [
-  { key: "none", label: "", description: "", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 1 },
-  { key: "blessed", label: "Blessed Gate", description: "+50% XP from every kill", xpMult: 1.5, loot: 0, enemyAtkMult: 1, enemyHpMult: 1 },
-  { key: "bountiful", label: "Bountiful Gate", description: "Much higher loot drop chance", xpMult: 1, loot: 0.25, enemyAtkMult: 1, enemyHpMult: 1 },
-  { key: "vicious", label: "Vicious Gate", description: "Enemies hit harder, but drop more loot", xpMult: 1, loot: 0.15, enemyAtkMult: 1.35, enemyHpMult: 1 },
-  { key: "swift", label: "Swift Gate", description: "Enemies are frailer than usual", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 0.75 }
+  { key: "none", label: "", description: "", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 1, enemyDefMult: 1, eliteChanceBonus: 0, goldMult: 1, weight: 0 },
+  { key: "blessed", label: "Blessed Gate", description: "+50% XP from every kill", xpMult: 1.5, loot: 0, enemyAtkMult: 1, enemyHpMult: 1, enemyDefMult: 1, eliteChanceBonus: 0, goldMult: 1, weight: 3 },
+  { key: "bountiful", label: "Bountiful Gate", description: "Much higher loot drop chance", xpMult: 1, loot: 0.25, enemyAtkMult: 1, enemyHpMult: 1, enemyDefMult: 1, eliteChanceBonus: 0, goldMult: 1, weight: 3 },
+  { key: "swift", label: "Swift Gate", description: "Enemies are frailer than usual", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 0.75, enemyDefMult: 1, eliteChanceBonus: 0, goldMult: 1, weight: 3 },
+  { key: "wealthy", label: "Wealthy Gate", description: "+50% gold from every kill", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 1, enemyDefMult: 1, eliteChanceBonus: 0, goldMult: 1.5, weight: 3 },
+  { key: "generous", label: "Generous Gate", description: "Enemies hit softer, +40% XP", xpMult: 1.4, loot: 0, enemyAtkMult: 0.85, enemyHpMult: 1, enemyDefMult: 1, eliteChanceBonus: 0, goldMult: 1, weight: 3 },
+  { key: "frail", label: "Frail Gate", description: "Enemies are weak all around - a quick, low-reward clear", xpMult: 1, loot: 0, enemyAtkMult: 1, enemyHpMult: 0.7, enemyDefMult: 0.85, eliteChanceBonus: 0, goldMult: 1, weight: 2 },
+  { key: "vicious", label: "Vicious Gate", description: "Enemies hit harder, but drop more loot", xpMult: 1, loot: 0.15, enemyAtkMult: 1.35, enemyHpMult: 1, enemyDefMult: 1, eliteChanceBonus: 0, goldMult: 1, weight: 2 },
+  { key: "elite_surge", label: "Elite Surge", description: "Far more Elites, +10% loot chance", xpMult: 1, loot: 0.1, enemyAtkMult: 1, enemyHpMult: 1, enemyDefMult: 1, eliteChanceBonus: 0.14, goldMult: 1, weight: 2 },
+  { key: "tempered", label: "Tempered Gate", description: "Enemies are much better armored, +20% XP", xpMult: 1.2, loot: 0, enemyAtkMult: 1, enemyHpMult: 1, enemyDefMult: 1.4, eliteChanceBonus: 0, goldMult: 1, weight: 2 },
+  { key: "fortified", label: "Fortified Gate", description: "Tougher and better armored, +30% loot chance", xpMult: 1, loot: 0.3, enemyAtkMult: 1, enemyHpMult: 1.25, enemyDefMult: 1.2, eliteChanceBonus: 0, goldMult: 1, weight: 1.5 },
+  { key: "cursed", label: "Cursed Gate", description: "Everything about the enemies is worse - but so is the payout, in your favor", xpMult: 1, loot: 0.5, enemyAtkMult: 1.5, enemyHpMult: 1.25, enemyDefMult: 1.2, eliteChanceBonus: 0, goldMult: 1.75, weight: 1 }
 ];
+
+/** Weighted pick among the non-"none" modifiers (see each entry's
+ *  `weight`) - the same cumulative-weight technique rollRarity already
+ *  uses for loot tiers, so a mild modifier (Blessed, weight 3) comes up
+ *  noticeably more often than the one high-risk/high-reward outlier
+ *  (Cursed, weight 1). */
+function pickWeightedModifier(pool: GateModifier[]): GateModifier {
+  const total = pool.reduce((sum, m) => sum + m.weight, 0);
+  let roll = Math.random() * total;
+  for (const m of pool) {
+    roll -= m.weight;
+    if (roll <= 0) return m;
+  }
+  return pool[pool.length - 1];
+}
 
 export function rollGateModifier(): GateModifier {
   // ~40% chance of an ordinary run with no modifier at all.
   if (Math.random() < 0.4) return GATE_MODIFIERS[0];
-  return pick(GATE_MODIFIERS.slice(1));
+  return pickWeightedModifier(GATE_MODIFIERS.slice(1));
 }
 
 /** How hard a deployed Shadow hits per player action, by its rank. */

@@ -479,10 +479,15 @@ export class Game {
       const s = statsForBoss(gate);
       const hp = Math.round(s.hp * modifier.enemyHpMult);
       const atk = Math.round(s.atk * modifier.enemyAtkMult);
+      const def = Math.round(s.def * modifier.enemyDefMult);
       const gold = Math.round(s.xp * 0.9);
-      return [this.freshUnit(gate.bossName, hp, atk, s.def, s.xp, gold, false)];
+      return [this.freshUnit(gate.bossName, hp, atk, def, s.xp, gold, false)];
     }
     const units: EnemyUnit[] = [];
+    // A modifier's eliteChanceBonus (e.g. Elite Surge) stacks additively
+    // onto the flat base chance, capped well short of "every unit is
+    // Elite" so a trash wave never stops feeling like trash.
+    const eliteChance = Math.min(0.6, 0.12 + modifier.eliteChanceBonus);
     for (let i = 0; i < entry.count; i++) {
       const s = statsForUnit(gate, entry.unitStart + i, trashCount);
       // Each trash unit rolls one of the gate's 5 species at random - its
@@ -492,11 +497,11 @@ export class Game {
       const typeIdx = Math.floor(Math.random() * gate.enemyTypes.length);
       const name = gate.enemyTypes[typeIdx];
       const variant = TYPE_VARIANTS[typeIdx % TYPE_VARIANTS.length];
-      const isElite = Math.random() < 0.12;
+      const isElite = Math.random() < eliteChance;
       const eliteMult = isElite ? 1.6 : 1;
       const hp = Math.round(s.hp * variant.hpMult * eliteMult * modifier.enemyHpMult);
       const atk = Math.round(s.atk * variant.atkMult * eliteMult * modifier.enemyAtkMult);
-      const def = Math.round(s.def * variant.defMult);
+      const def = Math.round(s.def * variant.defMult * modifier.enemyDefMult);
       const xp = Math.round(s.xp * (isElite ? 1.8 : 1));
       const gold = Math.round(xp * 0.6);
       units.push(this.freshUnit(name, hp, atk, def, xp, gold, isElite));
@@ -706,7 +711,13 @@ export class Game {
       const title = this.equippedTitle();
       let goldPct = title?.bonus.kind === "goldPct" ? title.bonus.value : 0;
       goldPct += talentGoldPct(this.state.talents.unlockedIds);
-      const gold = Math.round(unit.gold * (1 + goldPct));
+      // Wealthy/Cursed gate modifiers apply as their own separate
+      // multiplier on top of the Title/Talent percentage bonus, the same
+      // "gear-then-multiplier" layering effectiveStat already uses -
+      // goldMult defaults to 1 (a no-op) for every modifier that isn't
+      // specifically about gold.
+      const goldMult = battle.modifier?.goldMult ?? 1;
+      const gold = Math.round(unit.gold * (1 + goldPct) * goldMult);
       this.state.player = { ...this.state.player, gold: this.state.player.gold + gold };
       this.incrementCounter(COUNTER_KEYS.goldEarnedTotal, gold);
     }

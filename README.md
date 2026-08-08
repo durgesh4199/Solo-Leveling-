@@ -35,6 +35,17 @@ engine, no external art/font dependencies — built to run on:
   monster (bigger portrait, glowing rotating ring, boss name, heavier
   stats). HP/MP carry over between waves within a run — no free heals,
   potions are the only relief
+- **Dungeon Modifiers** — every gate attempt rolls one (~40% chance of a
+  plain, unmodified run) from 11 real modifiers spanning three tiers:
+  mild (Blessed +50% XP, Bountiful +loot chance, Wealthy +50% gold,
+  Generous softer enemies + XP, Swift/Frail weaker enemies), risk-reward
+  (Vicious harder-hitting enemies + loot, Elite Surge far more Elites,
+  Tempered/Fortified tougher and better-armored enemies for more
+  reward), and the rare **Cursed Gate** - enemies hit harder, have more
+  HP *and* more armor all at once, but the gold and loot chance are
+  cranked way up to match. Rarer modifiers roll less often (weighted, not
+  a flat coin-flip across all of them), so the biggest risk/reward gates
+  actually feel rare
 - **Battle** — turn-based, auto-targeting the frontmost living enemy
   (underlined): **Attack**, **Skills** (see below), **Guard** (blocks for a
   random 1-3 rounds, halving incoming damage each round it's up - but
@@ -316,10 +327,9 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Crafting, Relics, Equipment Sets, Dungeon
-Modifiers, Random Events, an Infinite Tower, Daily/Weekly missions,
-Prestige, combat status effects, and more) lives in
-**`EXPANSION_ROADMAP.md`**, phased so each stays a real, working system
-rather than a stub — Titles, Achievements, Shadow Evolution, the Talent
-Tree, Hunter Classes, and Promotion Exams above are already ahead of/
-within that plan.
+Long-term content roadmap (Crafting, Relics, Equipment Sets, Random
+Events, an Infinite Tower, Daily/Weekly missions, Prestige, combat status
+effects, and more) lives in **`EXPANSION_ROADMAP.md`**, phased so each
+stays a real, working system rather than a stub — Titles, Achievements,
+Shadow Evolution, the Talent Tree, Hunter Classes, Promotion Exams, and
+Dungeon Modifiers above are already ahead of/within that plan.
