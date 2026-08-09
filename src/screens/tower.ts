@@ -14,7 +14,7 @@ import { TOWER_MILESTONE_INTERVAL } from "../systems/tower/data";
 export const towerScreen = simpleScreen((game: Game) => {
   const highest = game.state.tower.highestFloor;
   return `
-    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
+    <div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
       <div>
         <h4 style="margin-bottom:var(--space-1);">Infinite Tower</h4>
         <div style="font-size:13px;color:var(--color-neutral-400);">

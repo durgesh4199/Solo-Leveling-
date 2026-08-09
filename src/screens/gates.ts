@@ -52,7 +52,7 @@ export const gatesScreen = simpleScreen((game: Game) => {
         <div style="font-size:13px;color:var(--color-neutral-400);">Choose a gate to enter. Higher ranks hit harder.</div>
       </div>
       ${examBanner}
-      <div style="flex:1;overflow-y:auto;padding:0 var(--space-6) var(--space-4);display:flex;flex-direction:column;gap:var(--space-3);">
+      <div data-scroll style="flex:1;overflow-y:auto;padding:0 var(--space-6) var(--space-4);display:flex;flex-direction:column;gap:var(--space-3);">
         ${rows}
       </div>
     </div>

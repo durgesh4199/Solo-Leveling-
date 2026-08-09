@@ -1,5 +1,5 @@
 import type { Game } from "../store";
-import type { ScreenModule } from "./types";
+import { redraw, type ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { shadowPortrait } from "../art/portraits";
 import { effectiveShadowPower, shadowMood, shadowXpToNext, nextShadowRank, SHADOW_EVOLUTION_COST, SHADOW_MAX_LEVEL, SHADOW_NAME_MAX_LENGTH, SHADOW_SKILLS } from "../systems/shadows/data";
@@ -260,8 +260,9 @@ export const shadowsScreen: ScreenModule = (root, game) => {
     `;
     }).join("");
 
+    redraw(root, () => {
     root.innerHTML = `
-      <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
+      <div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-2);">
           <div>
             <h4 style="margin-bottom:var(--space-1);">Shadow Army</h4>
@@ -356,6 +357,7 @@ export const shadowsScreen: ScreenModule = (root, game) => {
         else if (kind === "type") typeFilter = value;
         draw();
       });
+    });
     });
   };
 

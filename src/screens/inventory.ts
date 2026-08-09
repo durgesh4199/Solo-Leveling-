@@ -1,5 +1,5 @@
 import type { Game } from "../store";
-import type { ScreenModule } from "./types";
+import { redraw, type ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { hunterPortrait } from "../art/portraits";
 import { POTIONS, RARITY_META, affixDeltaText, affixText, compareItemAffixes, priceForItem, sellPriceForItem } from "../data";
@@ -372,8 +372,9 @@ export const inventoryScreen: ScreenModule = (root, game) => {
     const p = game.state.player;
     const body = subTab === "gear" ? drawGear(p) : subTab === "shop" ? drawShop(p) : subTab === "craft" ? drawCraft(p) : drawPotions(p);
 
+    redraw(root, () => {
     root.innerHTML = `
-      <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
+      <div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
         <div style="display:flex;align-items:center;justify-content:space-between;">
           <div>
             <h4 style="margin-bottom:var(--space-1);">Inventory</h4>
@@ -394,8 +395,16 @@ export const inventoryScreen: ScreenModule = (root, game) => {
       </div>
     `;
 
+    // Switching sub-tabs shows genuinely different content, so it's the
+    // one interaction here that *should* jump to the top rather than
+    // inheriting whatever scroll position the previous sub-tab had.
     root.querySelectorAll<HTMLElement>("[data-subtab]").forEach((el) => {
-      el.addEventListener("click", () => { subTab = el.dataset.subtab as SubTab; draw(); });
+      el.addEventListener("click", () => {
+        subTab = el.dataset.subtab as SubTab;
+        draw();
+        const region = root.querySelector<HTMLElement>("[data-scroll]");
+        if (region) region.scrollTop = 0;
+      });
     });
     root.querySelectorAll<HTMLElement>('[data-action="equip-item"]').forEach((el) => {
       el.addEventListener("click", () => { comparingId = null; game.equipItem(el.dataset.item!); });
@@ -441,6 +450,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
         else if (kind === "sort") sortBy = value as SortBy;
         draw();
       });
+    });
     });
 
     if (subTab === "shop") {

@@ -1,5 +1,5 @@
 import type { Game } from "../store";
-import type { ScreenController, ScreenModule } from "./types";
+import { redraw, type ScreenController, type ScreenModule } from "./types";
 import { icon } from "../art/icons";
 import { STAT_DEFS, STAT_TUNING } from "../data";
 import type { StatKey } from "../types";
@@ -201,8 +201,9 @@ function renderTitles(body: HTMLElement, game: Game): void {
       </div>`;
   }).join("");
 
+  redraw(body, () => {
   body.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
+    <div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
       <div style="font-size:12px;color:var(--color-neutral-500);">${unlocked.size} / ${TITLES.length} unlocked · one equipped at a time, its bonus applies everywhere</div>
       ${rows}
     </div>
@@ -213,6 +214,7 @@ function renderTitles(body: HTMLElement, game: Game): void {
   });
   body.querySelectorAll<HTMLElement>('[data-action="unequip-title"]').forEach((el) => {
     el.addEventListener("click", () => { game.equipTitle(null); renderTitles(body, game); });
+  });
   });
 }
 
@@ -257,8 +259,9 @@ function renderRelics(body: HTMLElement, game: Game): void {
       </div>`;
   }).join("");
 
+  redraw(body, () => {
   body.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
+    <div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);">
         <div style="font-size:12px;color:var(--color-neutral-500);">${owned.size} / ${RELICS.length} found · dropped by Gate bosses</div>
         <div class="tag tag-accent" style="flex-shrink:0;">${relics.equippedIds.length} / ${RELIC_SLOT_COUNT} equipped</div>
@@ -272,6 +275,7 @@ function renderRelics(body: HTMLElement, game: Game): void {
   });
   body.querySelectorAll<HTMLElement>('[data-action="unequip-relic"]').forEach((el) => {
     el.addEventListener("click", () => { game.unequipRelic(el.dataset.id!); renderRelics(body, game); });
+  });
   });
 }
 
@@ -359,8 +363,9 @@ function renderTalents(body: HTMLElement, game: Game): void {
   };
 
   const totalLearned = talents.unlockedIds.length;
+  redraw(body, () => {
   body.innerHTML = `
-    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
+    <div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-4);overflow-y:auto;">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);">
         <div style="font-size:11px;color:var(--color-neutral-500);">${totalLearned} / ${TALENTS.length} learned · each tier requires the one above it in that branch · 1 point per level, permanent once learned</div>
         <div class="tag tag-accent" style="flex-shrink:0;">${talents.points} pt${talents.points === 1 ? "" : "s"}</div>
@@ -375,6 +380,7 @@ function renderTalents(body: HTMLElement, game: Game): void {
 
   body.querySelectorAll<HTMLElement>('[data-action="learn-talent"]').forEach((el) => {
     el.addEventListener("click", () => { game.learnTalent(el.dataset.id!); renderTalents(body, game); });
+  });
   });
 }
 
@@ -446,7 +452,8 @@ export const statsScreen: ScreenModule = (root, game) => {
         </div>`;
     }
 
-    body.innerHTML = `<div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">${content}</div>`;
+    redraw(body, () => {
+    body.innerHTML = `<div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">${content}</div>`;
 
     body.querySelectorAll<HTMLElement>('[data-action="pick-class"]').forEach((el) => {
       el.addEventListener("click", () => { classConfirmId = el.dataset.id as HunterClassId; renderClass(body); });
@@ -460,6 +467,7 @@ export const statsScreen: ScreenModule = (root, game) => {
         classConfirmId = null;
         renderClass(body);
       });
+    });
     });
   };
 
@@ -490,8 +498,9 @@ export const statsScreen: ScreenModule = (root, game) => {
         </div>`
       : `<button class="btn btn-primary action-btn" style="justify-content:center;padding:var(--space-3);font-size:13px;" data-action="start-reawaken">${icon("sparkles")} Reawaken</button>`;
 
+    redraw(body, () => {
     body.innerHTML = `
-      <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
+      <div data-scroll style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
         <div class="card power-card" style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);border:1px solid var(--color-accent-700);">
           <div style="display:flex;align-items:center;gap:8px;">
             <span style="font-size:20px;color:var(--color-accent-300);">${icon("sparkles")}</span>
@@ -514,6 +523,7 @@ export const statsScreen: ScreenModule = (root, game) => {
     body.querySelector<HTMLElement>('[data-action="confirm-reawaken"]')?.addEventListener("click", () => {
       game.reawaken();
       reawakenConfirming = false;
+    });
     });
   };
 
