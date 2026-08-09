@@ -333,6 +333,18 @@ export interface TalentState {
   unlockedIds: string[];
 }
 
+/** Relic collection state (see src/systems/relics/) - `ownedIds` is every
+ *  Relic ever found (see Game.onWaveCleared's boss-drop roll), `equippedIds`
+ *  is which of those are currently worn (capped at RELIC_SLOT_COUNT,
+ *  freely swappable, no cost - unlike a Talent node's permanent unlock).
+ *  Owning a Relic and equipping it are deliberately two separate lists:
+ *  a player can hold more Relics than they can wear at once, so "own many,
+ *  actively wear a few" is a real loadout choice, not just a checklist. */
+export interface RelicState {
+  ownedIds: string[];
+  equippedIds: string[];
+}
+
 /** A brief, app-wide notification (achievement/title unlock, etc.) that
  *  isn't tied to being inside a battle - battle already has its own toast
  *  on BattleState for in-run messages. Rendered by the app shell
@@ -340,7 +352,7 @@ export interface TalentState {
 export interface GlobalToast {
   id: number;
   text: string;
-  kind: "achievement" | "title" | "info" | "shadow" | "promotion" | "event";
+  kind: "achievement" | "title" | "info" | "shadow" | "promotion" | "event" | "relic";
 }
 
 export interface GameState {
@@ -359,5 +371,6 @@ export interface GameState {
   battle: BattleState | null;
   progress: ProgressState;
   talents: TalentState;
+  relics: RelicState;
   globalToast?: GlobalToast | null;
 }

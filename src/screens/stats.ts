@@ -10,8 +10,10 @@ import { TALENTS, canUnlockTalent } from "../systems/talents/data";
 import type { TalentBranch, TalentNode } from "../systems/talents/types";
 import { CLASS_UNLOCK_LEVEL, HUNTER_CLASSES } from "../systems/classes/data";
 import type { HunterClassId } from "../types";
+import { RELICS, RELIC_SLOT_COUNT } from "../systems/relics/data";
+import type { RelicTier } from "../systems/relics/types";
 
-type SubTab = "status" | "titles" | "achievements" | "talents" | "class";
+type SubTab = "status" | "titles" | "achievements" | "talents" | "class" | "relics";
 
 /** What a single point in this stat actually buys, in concrete numbers -
  *  previewed on hover (before you commit) and floated as a confirmation
@@ -210,6 +212,65 @@ function renderTitles(body: HTMLElement, game: Game): void {
   });
   body.querySelectorAll<HTMLElement>('[data-action="unequip-title"]').forEach((el) => {
     el.addEventListener("click", () => { game.equipTitle(null); renderTitles(body, game); });
+  });
+}
+
+const RELIC_TIER_LABEL: Record<RelicTier, string> = { minor: "Minor", greater: "Greater", ancient: "Ancient" };
+
+/** Relics don't change while their sub-tab is open the same way Titles
+ *  don't - a one-shot render that redraws itself after every equip/
+ *  unequip. Unlike Titles (one equipped, mutually exclusive), any owned
+ *  Relic can be equipped independently up to RELIC_SLOT_COUNT - so the
+ *  Equip button just disables (rather than swapping something else out)
+ *  once the cap is hit, and every owned Relic keeps its own
+ *  Equipped/Equip state instead of one screen-wide "which is active"
+ *  selection. Undiscovered Relics still show their name/description/
+ *  bonus (same "locked but not hidden" convention Titles already use for
+ *  a not-yet-met condition) - only the action slot differs. */
+function renderRelics(body: HTMLElement, game: Game): void {
+  const { relics } = game.state;
+  const owned = new Set(relics.ownedIds);
+  const equipped = new Set(relics.equippedIds);
+  const atCap = relics.equippedIds.length >= RELIC_SLOT_COUNT;
+
+  const rows = RELICS.map((r) => {
+    const isOwned = owned.has(r.id);
+    const isEquipped = equipped.has(r.id);
+    const action = !isOwned
+      ? `<span class="tag tag-outline" style="flex-shrink:0;font-size:10px;">${icon("shield")} Not Found</span>`
+      : isEquipped
+      ? `<button class="btn btn-primary action-btn" style="flex-shrink:0;padding:6px 12px;font-size:11px;" data-action="unequip-relic" data-id="${r.id}">Equipped</button>`
+      : `<button class="btn btn-secondary action-btn" style="flex-shrink:0;padding:6px 12px;font-size:11px;" data-action="equip-relic" data-id="${r.id}" ${atCap ? "disabled" : ""} title="${atCap ? `All ${RELIC_SLOT_COUNT} slots full` : "Equip"}">Equip</button>`;
+    return `
+      <div style="display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3);border:1px solid ${isEquipped ? "var(--color-accent-600)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);${isOwned ? "" : "opacity:0.65;"}">
+        <span style="font-size:18px;color:${isOwned ? "var(--color-accent-300)" : "var(--color-neutral-600)"};flex-shrink:0;">${icon(r.icon as any)}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <div style="font-size:13px;font-weight:500;">${r.name}</div>
+            <span class="tag tag-outline" style="font-size:9px;padding:1px 6px;">${RELIC_TIER_LABEL[r.tier]}</span>
+          </div>
+          <div style="font-size:11px;color:var(--color-neutral-500);">${r.description}</div>
+          <div style="font-size:11px;color:var(--color-accent-300);margin-top:2px;">${r.bonusText}</div>
+        </div>
+        ${action}
+      </div>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);">
+        <div style="font-size:12px;color:var(--color-neutral-500);">${owned.size} / ${RELICS.length} found · dropped by Gate bosses</div>
+        <div class="tag tag-accent" style="flex-shrink:0;">${relics.equippedIds.length} / ${RELIC_SLOT_COUNT} equipped</div>
+      </div>
+      ${rows}
+    </div>
+  `;
+
+  body.querySelectorAll<HTMLElement>('[data-action="equip-relic"]').forEach((el) => {
+    el.addEventListener("click", () => { game.equipRelic(el.dataset.id!); renderRelics(body, game); });
+  });
+  body.querySelectorAll<HTMLElement>('[data-action="unequip-relic"]').forEach((el) => {
+    el.addEventListener("click", () => { game.unequipRelic(el.dataset.id!); renderRelics(body, game); });
   });
 }
 
@@ -414,6 +475,7 @@ export const statsScreen: ScreenModule = (root, game) => {
           ${subTabBtn("status", "Status", "chart-bar")}
           ${subTabBtn("class", "Class", "shield")}
           ${subTabBtn("talents", "Talents", "lightning")}
+          ${subTabBtn("relics", "Relics", "circle-dashed")}
           ${subTabBtn("titles", "Titles", "sparkles")}
           ${subTabBtn("achievements", "Achievements", "check-circle")}
         </div>
@@ -429,6 +491,7 @@ export const statsScreen: ScreenModule = (root, game) => {
     if (subTab === "status") statusController = mountStatusBody(body, game);
     else if (subTab === "class") renderClass(body);
     else if (subTab === "talents") renderTalents(body, game);
+    else if (subTab === "relics") renderRelics(body, game);
     else if (subTab === "titles") renderTitles(body, game);
     else renderAchievements(body, game);
   };

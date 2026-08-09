@@ -153,6 +153,16 @@ engine, no external art/font dependencies — built to run on:
   one-time gold + stat point reward; lose and just try again. Rank always
   advances one tier at a time, even if you've out-leveled several tiers
   at once
+- **Relics** — a Relics sub-tab on Status: a Gate boss clear (never trash,
+  never a Promotion Exam) has a 15% chance of dropping a brand-new Relic
+  from a 14-entry roster (6 minor, 5 greater, 3 ancient - rarer tiers
+  drop less often and grant a bigger bonus), announced with its own
+  bronze global toast. Unlike a Title (one equipped) or a Talent
+  (permanent, no respec), a Relic is a real loadout: own as many as you
+  find, equip up to **3 at once**, swap freely at any time for free. Each
+  one grants a small percentage bonus (a stat, Crit, XP, or Gold) that
+  stacks additively alongside your Title and Talents - three independent
+  systems all feeding the same formulas without compounding
 - **Equipment** — 6 slots (Weapon, Helmet, Body Armor, Legs, Ring, Amulet),
   each item rolling 1-4 random affixes depending on rarity: the five core
   stats (folds into effectiveStat, same as a stat point), direct flat
@@ -191,15 +201,17 @@ engine, no external art/font dependencies — built to run on:
   buttons) expands a **comparison** against whatever's equipped in that
   slot - exactly which stats go up, which go down, right there before you
   commit to equipping or buying
-- **Status** — three sub-tabs. **Status** (unchanged): hovering a stat's
+- **Status** — six sub-tabs. **Status** (unchanged): hovering a stat's
   `+` previews exactly what that point would buy ("+5 Max HP", "+0.3% Crit
   · -1% Guard Miss", ...) before you commit to it, then floats the same
-  confirmation off the row once you do. **Titles**: milestone-gated
-  passive bonuses (kill counts per monster family, Shadow collection size,
-  Gates cleared, boss kills, rank reached) - locked ones show live
-  progress toward them, one can be equipped at a time. **Achievements**: a
-  starter roster of 28 spanning every progression axis in the game, each
-  granting gold or stat points the instant it's met, no separate claim
+  confirmation off the row once you do. **Class** and **Talents**: see
+  Hunter Class/Talent Tree above. **Relics**: see Relics above. **Titles**:
+  milestone-gated passive bonuses (kill counts per monster family, Shadow
+  collection size, Gates cleared, boss kills, rank reached) - locked ones
+  show live progress toward them, one can be equipped at a time.
+  **Achievements**: a starter roster of 28 spanning every progression axis
+  in the game, each granting gold or stat points the instant it's met, no
+  separate claim
   step
 - **Progress persists** — autosaves (debounced, at most once every 3s,
   plus a final flush on tab close) to a versioned localStorage save. The
@@ -349,9 +361,10 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Relics, Equipment Sets, an Infinite Tower,
-Daily/Weekly missions, Prestige, combat status effects, and more) lives in
+Long-term content roadmap (Equipment Sets, an Infinite Tower, Daily/Weekly
+missions, Prestige, combat status effects, and more) lives in
 **`EXPANSION_ROADMAP.md`**, phased so each stays a real, working system
 rather than a stub — Titles, Achievements, Shadow Evolution, the Talent
 Tree, Hunter Classes, Promotion Exams, Dungeon Modifiers, Random Events,
-Better Enemy AI, and Crafting above are already ahead of/within that plan.
+Better Enemy AI, Crafting, and Relics above are already ahead of/within
+that plan.

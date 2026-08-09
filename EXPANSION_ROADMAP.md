@@ -667,7 +667,75 @@ touching anything below.
       parameter both with and without an argument (confirming omission
       still randomizes, exactly matching pre-#14 behavior), and the
       `continueSave()` backfill for a save missing `shadowEssence`.
-15. Relics — pending.
+15. **Relics** — ✅ **Done.** New `src/systems/relics/` and a new
+    top-level `GameState.relics: RelicState` slice (`{ ownedIds,
+    equippedIds }`). What makes a Relic a genuinely different system from
+    Titles/Talents/Classes, not a reskin of one of them:
+    - **Titles**: milestone-unlocked, exactly one equipped at a time.
+    - **Talents**: level-gated currency, many permanently unlocked at
+      once, no respec.
+    - **Hunter Class**: one permanent pick, each bonus lands in one
+      specific combat formula rather than the shared pct pipeline.
+    - **Relics**: **found**, not earned - a `RelicBonus` (the same 5-kind
+      shape `TitleBonus`/`TalentBonus` already use, duplicated for the
+      same "unrelated systems, shared shape" reason `TalentBonus`
+      duplicates `TitleBonus`) percentage that a player can *own* many of
+      but only *equip* `RELIC_SLOT_COUNT` (3) at once, freely swappable
+      any time with no cost and no permanence - a real loadout choice
+      layered on top of an RNG acquisition system, a combination none of
+      the three above have.
+    - **Acquisition**: a real Gate boss clear (never trash, never a
+      Promotion Exam boss - `Game.onWaveCleared` branches exam gates off
+      to `completePromotionExam` before the roll is ever reached, and an
+      exam gate isn't one of the 20 explorable Gates anyway) has a flat
+      15% chance (`RELIC_DROP_CHANCE`) of dropping a brand-new, not-yet-
+      owned Relic, weighted toward the common "minor" tier over "greater"
+      over the rare "ancient" tier (`rollRelicDrop`, the same cumulative-
+      weight technique `pickWeightedModifier`/`rollRandomEvent` already
+      use). Once every Relic in the 14-entry starter roster (6 minor/5
+      greater/3 ancient) is owned, the roll is a harmless no-op - the same
+      "ran out of content to grant" shape Achievements already has.
+    - **`Game.equipRelic`/`unequipRelic`** - equip is a no-op (not an
+      error) for an unowned id, an already-equipped id, or when all 3
+      slots are full; unequip just frees the slot. No confirm step -
+      unlike Merge/Evolve/Disenchant, swapping a loadout costs nothing and
+      loses nothing, so there's no permanent choice to guard.
+    - **Fourth system now folding into the shared additive pct pipeline**
+      (`effectiveStat`/`critChance`/`grantXp`/`grantKillRewards`) -
+      `relicStatPct`/`relicCritFlat`/`relicXpPct`/`relicGoldPct` sum
+      across `equippedIds` only (owned-but-unequipped Relics contribute
+      nothing) and fold into the same single combined `pct` Title + Talent
+      already combine into before one multiply, per the "no multiplier
+      chains" guardrail - title + talent + relic all add, never
+      compound.
+    - New Relics sub-tab on Status (`renderRelics`, screens/stats.ts) -
+      every roster entry always shows its name/description/bonus (the
+      same "locked but not hidden" convention Titles already use), only
+      the action slot differs: Not Found / Equip / Equipped, with the
+      Equip button disabling once the 3-slot cap is hit.
+    - New `global-toast.relic` style (bronze) for the "Relic Found:
+      &lt;name&gt;" announcement on drop.
+    - New save-migration case: `relics` is a **brand-new top-level slice**
+      on an old save, same shape as Talents' own missing-slice case (#8),
+      but *without* a retroactive catch-up grant - a Relic is found, not
+      earned by leveling, so a save missing the slice legitimately just
+      owns none yet; `continueSave()` defaults it to
+      `{ ownedIds: [], equippedIds: [] }`.
+    - Verified via a live `Game` instance: roster id-uniqueness and
+      registry resolution, `rollRelicDrop` excluding owned ids (down to
+      the exactly-one-left-in-pool case) and returning `null` once
+      everything's owned, a 500-trial statistical check that the weighted
+      tiers aren't collapsing to one, all four `relic*Pct` helpers summing
+      correctly (including `allStatsPct` contributing to a stat with no
+      direct relic), `equipRelic`/`unequipRelic`'s full state machine (no-
+      op on unowned, cap enforcement, idempotent re-equip, slot reuse
+      after unequip), each of the four shared formula sites actually
+      reflecting an equipped Relic's bonus, a forced boss-clear roll
+      correctly granting the one remaining Relic and firing the toast, a
+      non-boss wave clear and a Promotion Exam boss clear each never
+      rolling a Relic even with `Math.random` forced to guarantee a drop
+      if the code path were ever reached, and the `continueSave()`
+      backfill for a save missing the `relics` slice entirely.
 16. Equipment Sets — pending.
 
 ### Phase 6 — Endgame & meta-progression

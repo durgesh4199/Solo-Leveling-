@@ -457,15 +457,16 @@ pulses gold whenever it increases).
 - **Additive stacking across systems, not just within one**: every site
   that already read an equipped Title's percentage bonus
   (`effectiveStat`, `critChance`, `grantXp`, `grantKillRewards`) now
-  computes `titlePct + talentPct` as one combined number *before*
-  applying a single `value *= 1 + pct`, instead of multiplying twice.
-  Two nested multiplies would silently compound (1.03 x 1.03 = 6.09%
-  effective, not a flat 6%) - small at these magnitudes, but exactly the
-  kind of drift the "no multiplier chains" guardrail exists to prevent,
-  and it compounds for real once more percentage-granting systems land
-  (Relics, Equipment Sets, Prestige - still pending; #9 Hunter Classes
-  shipped without needing this - see below, its bonuses each target one
-  specific formula rather than this shared pipeline).
+  computes `titlePct + talentPct + relicPct` as one combined number
+  *before* applying a single `value *= 1 + pct`, instead of multiplying
+  three times. Nested multiplies would silently compound (1.03 x 1.03 x
+  1.03 = 9.27% effective, not a flat 9%) - small at these magnitudes, but
+  exactly the kind of drift the "no multiplier chains" guardrail exists to
+  prevent, and it compounds for real as more percentage-granting systems
+  land (Equipment Sets, Prestige - still pending; Relics joined this
+  pipeline at #15; #9 Hunter Classes shipped without needing this - see
+  below, its bonuses each target one specific formula rather than this
+  shared pipeline).
   **Any future system adding its own percentage bonus to one of these
   four sites must fold into the same combined `pct` before the single
   multiply, not bolt on a second multiply.**
@@ -829,6 +830,78 @@ pulses gold whenever it increases).
   itself deliver a gem-item type to fill a socket with; that's still a
   separate, unbuilt future addition to the #4 affix system.
 
+## Relics (Phase 5 item #15 of EXPANSION_ROADMAP.md)
+
+- **New module, `src/systems/relics/`** - `types.ts` (`RelicBonus`,
+  `RelicTier`, `RelicDef`) mirrors `systems/titles/`/`systems/talents/`
+  structurally; `data.ts` holds the 14-entry `RELICS` roster,
+  `RELIC_REGISTRY`, `RELIC_SLOT_COUNT` (3), `RELIC_DROP_CHANCE` (0.15),
+  and the four `relic*Pct` sum helpers.
+- **What actually distinguishes a Relic from a Title/Talent/Class isn't
+  the bonus shape** - `RelicBonus` is intentionally the same 5-kind union
+  `TitleBonus`/`TalentBonus` already use (statPct/allStatsPct/xpPct/
+  goldPct/critFlat), duplicated rather than imported for the same
+  "unrelated systems, shared shape" reason `TalentBonus` duplicates
+  `TitleBonus`. What's different is **how it's acquired and worn**: found
+  via an RNG boss-drop roll (not milestone-unlocked like a Title, not
+  level-gated currency like a Talent), and owned separately from equipped
+  (`RelicState.ownedIds` vs `.equippedIds`) with a real cap
+  (`RELIC_SLOT_COUNT`) but no permanence - freely re-equip any owned
+  Relic at any time, unlike a Talent's no-respec unlock.
+- **`rollRelicDrop(ownedIds)`** (data.ts) - weighted pick among not-yet-
+  owned Relics only, using the same cumulative-weight technique
+  `pickWeightedModifier`/`rollGateModifier` already established, keyed by
+  a per-tier weight (`RELIC_TIER_WEIGHT`, minor > greater > ancient)
+  rather than a per-entry `weight` field, since every Relic within a tier
+  is meant to be equally likely. Returns `null` once the whole roster is
+  owned - callers must treat that as a legitimate no-op, not an error.
+- **`Game.onWaveCleared`'s new `rollRelicDropOnBossClear()`** call, fired
+  only from the real (non-exam) `battle.isBossWave` branch, right where
+  `gatesCleared` is set - a Promotion Exam boss clear never reaches it
+  (that branch returns early into `completePromotionExam` before this
+  point), and neither does an ordinary trash wave clear. `RELIC_DROP_CHANCE`
+  gates whether the roll happens at all; `rollRelicDrop` then gates *which*
+  Relic (or none, if all owned). On a hit: append to `relics.ownedIds` and
+  fire a `showGlobalToast(..., "relic")` - the same single-slot toast
+  mechanism Title/Achievement/Promotion/Random-Event unlocks already
+  share (see refreshProgress's doc comment: if several unlocks land in
+  the same pass, only the last toast is visible, and that's an accepted
+  cosmetic tradeoff, not a bug).
+- **`Game.equipRelic(id)` / `unequipRelic(id)`** - both silent no-ops on
+  an invalid call (unowned id, already equipped, cap already full) rather
+  than throwing, matching `equipTitle`'s existing silent-reject shape.
+  No confirm-step UI needed anywhere, unlike Merge/Evolve/Disenchant -
+  equipping/unequipping a Relic is free and instantly reversible, so
+  there's no permanent choice to gate behind a confirm.
+- **Fourth system now feeding the shared additive `pct` pipeline** -
+  `effectiveStat`, `critChance`, `grantXp`, `grantKillRewards` each now
+  compute `titlePct + talentPct + relicPct` (relic's contribution summed
+  across `equippedIds` only, via `relicStatPct`/`relicCritFlat`/
+  `relicXpPct`/`relicGoldPct`) before the one multiply - see the updated
+  guardrail note earlier in this doc. `powerScore` needed **no changes at
+  all** to pick up Relics - it already reads `effectiveStat`/`critChance`,
+  so an equipped Relic's contribution flows through automatically, the
+  same way Titles and Talents already do.
+- **`renderRelics`** (screens/stats.ts, new Relics sub-tab) - a one-shot
+  render that redraws itself after every equip/unequip, same shape as
+  `renderTitles`/`renderTalents`. Unlike Titles' mutually-exclusive
+  single equip slot, every roster row tracks its own owned/equipped state
+  independently, so the Equip button just disables once the 3-slot cap is
+  hit rather than swapping something else out. Every entry always shows
+  its real name/description/bonus text regardless of whether it's been
+  found yet (the same "locked but not hidden" convention Titles already
+  use for an unmet condition) - only the action slot (Not Found / Equip /
+  Equipped) changes.
+- **Save migration**: `relics` is a brand-new top-level `GameState` slice
+  (added to `SavedGameState`'s `Pick<...>` in `systems/save/types.ts` and
+  to the explicit field list in both `persistNow()` and `continueSave()`,
+  the same two places every prior top-level slice addition touched) -
+  structurally identical to Talents' own missing-slice case (#8), but
+  *without* a retroactive catch-up grant: a Relic is found through play
+  going forward, not earned by levels already reached, so a save missing
+  the slice legitimately defaults to owning none rather than needing a
+  backfilled amount.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -904,7 +977,7 @@ Arise, level-up, dissolve).
   Inventory improvements ✅ → Equipment affix expansion ✅ → Shadow
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
   Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers ✅ →
-  Random Events ✅ → Better Enemy AI ✅ → Crafting ✅ → Relics → Equipment
+  Random Events ✅ → Better Enemy AI ✅ → Crafting ✅ → Relics ✅ → Equipment
   Sets → Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always
   check that file for current status before starting any expansion work -
   **do not start the next item without an explicit go-ahead**, and do

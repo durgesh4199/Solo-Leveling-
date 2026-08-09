@@ -16,6 +16,7 @@ import { EXAM_GATE_ID, PROMOTION_REWARD, examEligibleRank as computeExamEligible
 import { RANDOM_EVENT_RANK_MULT, rollRandomEvent } from "./systems/events/data";
 import type { RandomEventDef } from "./systems/events/types";
 import { CRAFT_EQUIPMENT_COST, CRAFT_RARITY_BONUS, REFORGE_COST_BY_RARITY, essenceFromShadow } from "./systems/crafting/data";
+import { RELIC_DROP_CHANCE, RELIC_SLOT_COUNT, relicCritFlat, relicGoldPct, relicStatPct, relicXpPct, rollRelicDrop } from "./systems/relics/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -53,6 +54,7 @@ const INITIAL_STATE: GameState = {
   battle: null,
   progress: { counters: {}, unlockedTitleIds: [], equippedTitleId: null, unlockedAchievementIds: [] },
   talents: { points: 0, unlockedIds: [] },
+  relics: { ownedIds: [], equippedIds: [] },
   globalToast: null
 };
 
@@ -139,14 +141,15 @@ export class Game {
   }
 
   /** Base stat + whatever's equipped anywhere rolled a matching affix,
-   *  then the equipped Title's percentage bonus and every unlocked
-   *  Talent's percentage bonus (#8) - combined into *one* percentage and
-   *  applied as a single multiply, not two nested multiplies, so two
-   *  small bonuses stack additively (title 3% + talent 3% = 6%) instead
-   *  of quietly compounding (1.03 x 1.03 = 6.09%) - the "no multiplier
-   *  chains" guardrail in EXPANSION_ROADMAP.md applies just as much
-   *  between systems as within one. Public - the battle UI reads this
-   *  too, for the combat-details readout. */
+   *  then the equipped Title's percentage bonus, every unlocked Talent's
+   *  percentage bonus (#8), and every equipped Relic's percentage bonus
+   *  (#15) - combined into *one* percentage and applied as a single
+   *  multiply, not several nested multiplies, so small bonuses stack
+   *  additively (title 3% + talent 3% + relic 3% = 9%) instead of quietly
+   *  compounding - the "no multiplier chains" guardrail in
+   *  EXPANSION_ROADMAP.md applies just as much between systems as within
+   *  one. Public - the battle UI reads this too, for the combat-details
+   *  readout. */
   effectiveStat(key: StatKey): number {
     const p = this.state.player;
     let value = p[key];
@@ -163,6 +166,7 @@ export class Game {
       else if (title.bonus.kind === "allStatsPct") pct += title.bonus.value;
     }
     pct += talentStatPct(this.state.talents.unlockedIds, key);
+    pct += relicStatPct(this.state.relics.equippedIds, key);
     if (pct > 0) value *= 1 + pct;
     return value;
   }
@@ -209,7 +213,8 @@ export class Game {
     const title = this.equippedTitle();
     const titleCrit = title?.bonus.kind === "critFlat" ? title.bonus.value : 0;
     const talentCrit = talentCritFlat(this.state.talents.unlockedIds);
-    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit + talentCrit);
+    const relicCrit = relicCritFlat(this.state.relics.equippedIds);
+    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit + talentCrit + relicCrit);
   }
 
   private rollCrit(): boolean {
@@ -293,6 +298,13 @@ export class Game {
       // (the same TALENT_POINTS_PER_LEVEL rate grantXp uses going
       // forward) instead of a bare empty state.
       talents: saved.talents ?? { points: Math.max(0, saved.player.level - 1) * TALENT_POINTS_PER_LEVEL, unlockedIds: [] },
+      // Older saves predate Relics (#15) entirely - unlike Talents, there's
+      // no retroactive catch-up to grant here (a Relic is *found*, not
+      // earned by leveling), so a save missing the slice legitimately just
+      // owns none yet, the same "brand-new slice, safe empty default"
+      // shape as talents' own unlockedIds/unlockedTitleIds arrays already
+      // have on an even older save.
+      relics: saved.relics ?? { ownedIds: [], equippedIds: [] },
       screen: "gates",
       battle: null
     };
@@ -319,7 +331,8 @@ export class Game {
       bag: this.state.bag,
       shop: this.state.shop,
       progress: this.state.progress,
-      talents: this.state.talents
+      talents: this.state.talents,
+      relics: this.state.relics
     });
   }
 
@@ -379,6 +392,26 @@ export class Game {
   equipTitle(id: string | null) {
     if (id !== null && !this.state.progress.unlockedTitleIds.includes(id)) return;
     this.state.progress = { ...this.state.progress, equippedTitleId: id };
+    this.notify();
+  }
+
+  /** Equip an owned Relic (up to RELIC_SLOT_COUNT at once, freely
+   *  swappable, no cost) - unlike a Talent node's permanent unlock or a
+   *  Title's one-at-a-time slot, Relics are a real loadout choice: own as
+   *  many as you find, wear up to RELIC_SLOT_COUNT of them. A no-op
+   *  (doesn't throw, doesn't notify) if the Relic isn't owned, is already
+   *  equipped, or every slot is already full. */
+  equipRelic(id: string) {
+    const relics = this.state.relics;
+    if (!relics.ownedIds.includes(id) || relics.equippedIds.includes(id) || relics.equippedIds.length >= RELIC_SLOT_COUNT) return;
+    this.state.relics = { ...relics, equippedIds: [...relics.equippedIds, id] };
+    this.notify();
+  }
+
+  unequipRelic(id: string) {
+    const relics = this.state.relics;
+    if (!relics.equippedIds.includes(id)) return;
+    this.state.relics = { ...relics, equippedIds: relics.equippedIds.filter((r) => r !== id) };
     this.notify();
   }
 
@@ -772,6 +805,7 @@ export class Game {
     const title = this.equippedTitle();
     let pct = title?.bonus.kind === "xpPct" ? title.bonus.value : 0;
     pct += talentXpPct(this.state.talents.unlockedIds);
+    pct += relicXpPct(this.state.relics.equippedIds);
     if (pct > 0) amount = Math.round(amount * (1 + pct));
     const player = { ...this.state.player };
     player.xp += amount;
@@ -801,6 +835,7 @@ export class Game {
       const title = this.equippedTitle();
       let goldPct = title?.bonus.kind === "goldPct" ? title.bonus.value : 0;
       goldPct += talentGoldPct(this.state.talents.unlockedIds);
+      goldPct += relicGoldPct(this.state.relics.equippedIds);
       // Wealthy/Cursed gate modifiers apply as their own separate
       // multiplier on top of the Title/Talent percentage bonus, the same
       // "gear-then-multiplier" layering effectiveStat already uses -
@@ -1071,10 +1106,28 @@ export class Game {
     if (battle.isBossWave) {
       this.state.gatesCleared = { ...this.state.gatesCleared, [battle.gateId]: true };
       this.state.battle = { ...battle, over: true, result: "gate-clear", locked: false };
+      this.rollRelicDropOnBossClear();
     } else {
       this.state.battle = { ...battle, over: true, result: "wave-clear", locked: false };
     }
     this.notify();
+  }
+
+  /** A real Gate boss clear (never a Promotion Exam boss - onWaveCleared
+   *  branches those off to completePromotionExam before this is ever
+   *  reached, and an exam gate isn't one of the 20 explorable Gates
+   *  anyway) has a flat RELIC_DROP_CHANCE (#15) of turning up a brand-new
+   *  Relic, weighted toward the common "minor" tier the same way
+   *  GATE_MODIFIERS/RANDOM_EVENTS weight their own pools. A no-op once
+   *  every Relic in the roster is already owned (rollRelicDrop returns
+   *  null) - same "ran out of content to grant" shape Achievements
+   *  already has. */
+  private rollRelicDropOnBossClear() {
+    if (Math.random() >= RELIC_DROP_CHANCE) return;
+    const relic = rollRelicDrop(this.state.relics.ownedIds);
+    if (!relic) return;
+    this.state.relics = { ...this.state.relics, ownedIds: [...this.state.relics.ownedIds, relic.id] };
+    this.showGlobalToast(`Relic Found: ${relic.name}`, "relic");
   }
 
   /** Item #10 of the fixed roadmap. Which rank tier a Promotion Exam is

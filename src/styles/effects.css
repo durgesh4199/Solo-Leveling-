@@ -13,6 +13,7 @@
 .global-toast.shadow { border-color: #9184d9; color: #b5abfc; }
 .global-toast.promotion { border-color: #fef6e4; color: #fef6e4; }
 .global-toast.event { border-color: #7fd88f; color: #a8e8b4; }
+.global-toast.relic { border-color: #d4914a; color: #f0b876; }
 .global-toast.show { animation: globalToastIn 2.6s ease forwards; }
 @keyframes globalToastIn {
   0% { opacity: 0; transform: translateX(-50%) translateY(-8px); }
