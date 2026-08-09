@@ -1,5 +1,5 @@
-import { ARCHETYPE_BY_RANK, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, sumEquipmentAffix, totalEnemiesForGate } from "./data";
-import type { AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LootItem, LungeSide, Rank, ShadowRecord, StatKey, VfxKind, WavePlanEntry } from "./types";
+import { ARCHETYPE_BY_RANK, ARCHETYPE_STATUS, GATE_REGISTRY, POTION_REGISTRY, STAT_TUNING, SHADOW_RANK_POWER, SKILL_REGISTRY, TYPE_VARIANTS, buildWavePlan, generateLoot, priceForItem, rankForLevel, rankRarityBonus, rollGateModifier, rollRarity, rollShopStock, sellPriceForItem, statsForBoss, statsForUnit, sumEquipmentAffix, totalEnemiesForGate } from "./data";
+import type { ActiveStatusEffect, AffixKey, BattleState, BattleToast, EnemyAction, EnemyUnit, FloatKind, GameState, GateDef, GateModifier, GlobalToast, ItemSlot, LootItem, LungeSide, Rank, ShadowRecord, StatKey, VfxKind, WavePlanEntry } from "./types";
 import { evaluateCondition } from "./systems/progress/conditions";
 import type { ProgressContext } from "./systems/progress/types";
 import { COUNTER_KEYS } from "./systems/progress/types";
@@ -15,6 +15,8 @@ import type { HunterClassDef } from "./systems/classes/types";
 import { EXAM_GATE_ID, PROMOTION_REWARD, examEligibleRank as computeExamEligibleRank, nextRank } from "./systems/exams/data";
 import { RANDOM_EVENT_RANK_MULT, rollRandomEvent } from "./systems/events/data";
 import type { RandomEventDef } from "./systems/events/types";
+import { BLESSING_STATUS_IDS, STATUS_EFFECT_REGISTRY, activeShieldPool, hasSilence, hasStun, rollFreezeSkip, statusCritChanceFlat, statusDamageDealtPct, statusDamageTakenPct, statusHealingReducedPct } from "./systems/statusEffects/data";
+import type { StatusEffectDef } from "./systems/statusEffects/types";
 import { CRAFT_EQUIPMENT_COST, CRAFT_RARITY_BONUS, REFORGE_COST_BY_RARITY, essenceFromShadow } from "./systems/crafting/data";
 import { RELIC_DROP_CHANCE, RELIC_SLOT_COUNT, relicCritFlat, relicGoldPct, relicStatPct, relicXpPct, rollRelicDrop } from "./systems/relics/data";
 import { SET_DROP_CHANCE, rollSetPieceDrop, setCritFlat, setGoldPct, setStatPct, setXpPct } from "./systems/sets/data";
@@ -224,7 +226,12 @@ export class Game {
     const talentCrit = talentCritFlat(this.state.talents.unlockedIds);
     const relicCrit = relicCritFlat(this.state.relics.equippedIds);
     const setCrit = setCritFlat(this.state.player.equipment);
-    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit + talentCrit + relicCrit + setCrit);
+    // Crit Up (a Blessing-only status, see systems/statusEffects/) - the
+    // one status axis that folds straight into an existing stat getter
+    // rather than a combat-formula term, the same "one more addend" shape
+    // every other source here (title/talent/relic/set) already uses.
+    const statusCrit = statusCritChanceFlat(this.state.battle?.playerStatusEffects ?? []);
+    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit + talentCrit + relicCrit + setCrit + statusCrit);
   }
 
   private rollCrit(): boolean {
@@ -584,7 +591,7 @@ export class Game {
     return {
       uid: `u${this.unitSeq}`, name, hp, maxHp: hp, atk, def, xp, gold, isElite,
       alive: true, hit: false, vfx: null, lunging: false,
-      floatText: null, floatId: 0, glow: false, guardRounds: 0
+      floatText: null, floatId: 0, glow: false, guardRounds: 0, statusEffects: []
     };
   }
 
@@ -647,7 +654,8 @@ export class Game {
       enemies: this.makeEnemies(gate, entry, trashCount, modifier),
       modifier,
       over: false, result: null, guardRounds: 0, locked: false,
-      playerHit: false, skillPanelOpen: false, itemPanelOpen: false
+      playerHit: false, skillPanelOpen: false, itemPanelOpen: false,
+      playerStatusEffects: []
     };
     this.notify();
   }
@@ -690,7 +698,7 @@ export class Game {
     const event = rollRandomEvent(entry.isBoss);
     if (event) {
       this.incrementCounter(COUNTER_KEYS.randomEventsTriggered);
-      this.applyRandomEvent(event, gate.rank);
+      this.applyRandomEvent(event, gate.rank, battle);
       if (event.effect.kind === "ambush") {
         enemies.push(this.makeTrashUnit(gate, Math.max(0, trashCount - 1), trashCount, modifier, true));
       }
@@ -710,13 +718,18 @@ export class Game {
     this.notify();
   }
 
-  /** Applies one rolled Random Event's instant effect (#12) - everything
+  /** Applies one rolled Random Event's effect (#12) - almost everything
    *  here is a one-shot state change plus a `global-toast.event`
    *  announcement, no temporary duration to track. The "ambush" case is
    *  deliberately a no-op here - it needs to push onto the *freshly
-   *  generated* enemies array for the wave about to start, which only
-   *  `advanceWave` (the caller) has in scope. */
-  private applyRandomEvent(event: RandomEventDef, gateRank: Rank) {
+   *  generated* enemies array for the wave about to start, which only the
+   *  caller has in scope. "blessing" is the one non-instant effect (see
+   *  RandomEventEffect's own doc comment) - it needs the live `battle` to
+   *  attach a status to, mutated directly here the same way `next.bossEnraged
+   *  = true` mutates-then-spreads elsewhere in this file: both call sites
+   *  spread `battle`/`...battle` into the next BattleState right after
+   *  calling this, so the mutation is picked up correctly either way. */
+  private applyRandomEvent(event: RandomEventDef, gateRank: Rank, battle: BattleState) {
     const mult = RANDOM_EVENT_RANK_MULT[gateRank];
     switch (event.effect.kind) {
       case "gold": {
@@ -760,6 +773,13 @@ export class Game {
       case "ambush":
         this.showGlobalToast(`${event.label} An extra foe joins the fight!`, "event");
         break;
+      case "blessing": {
+        const statusId = BLESSING_STATUS_IDS[Math.floor(Math.random() * BLESSING_STATUS_IDS.length)];
+        this.applyStatusEffect(battle, "player", statusId, "player");
+        const def = STATUS_EFFECT_REGISTRY.get(statusId);
+        this.showGlobalToast(`${event.label}: gained ${def?.name ?? "a blessing"}`, "event");
+        break;
+      }
     }
   }
 
@@ -958,6 +978,13 @@ export class Game {
    *  know the real number (life steal) use this instead of the `dmg` they
    *  passed in, which may have since been halved. */
   private applyDamage(battle: BattleState, unit: EnemyUnit, dmg: number, isCrit = false): number {
+    // Vulnerability/Defense Up (see systems/statusEffects/) - resolved
+    // before guard-halving, the same "modifier then mitigation" layering
+    // guard itself already applies on top of everything else.
+    if (unit.statusEffects.length) {
+      const pct = statusDamageTakenPct(unit.statusEffects);
+      if (pct !== 0) dmg = Math.max(1, Math.round(dmg * (1 + pct)));
+    }
     if (unit.guardRounds > 0) {
       dmg = Math.max(1, Math.round(dmg * 0.5));
       unit.guardRounds -= 1;
@@ -992,15 +1019,20 @@ export class Game {
   /** Rolls one basic-Attack hit's damage + crit result against a target -
    *  shared by the primary Attack and an equipped Attack Speed affix's
    *  chance at an immediate follow-up strike (see battleAttack), so the
-   *  two can never drift out of sync with each other. */
-  private rollBasicAttack(target: EnemyUnit): { dmg: number; isCrit: boolean } {
+   *  two can never drift out of sync with each other. `playerEffects` is
+   *  passed in rather than read internally purely to keep this method's
+   *  existing "no battle needed" shape - the caller already has
+   *  battle.playerStatusEffects in scope either way. */
+  private rollBasicAttack(target: EnemyUnit, playerEffects: ActiveStatusEffect[]): { dmg: number; isCrit: boolean } {
     const isCrit = this.rollCrit();
     let dmg = Math.max(1, Math.round(
       6 + this.effectiveStat("str") * STAT_TUNING.strAtkPerPoint + this.equipmentAffixSum("fireDamage")
       - target.def + (Math.random() * 4 - 2)
     ));
     const cls = this.equippedHunterClass();
-    if (cls?.bonus.kind === "attackDamagePct") dmg = Math.round(dmg * (1 + cls.bonus.value));
+    let dealtPct = cls?.bonus.kind === "attackDamagePct" ? cls.bonus.value : 0;
+    dealtPct += statusDamageDealtPct(playerEffects);
+    if (dealtPct !== 0) dmg = Math.max(1, Math.round(dmg * (1 + dealtPct)));
     if (isCrit) dmg = Math.round(dmg * this.critMultiplier());
     return { dmg, isCrit };
   }
@@ -1028,6 +1060,191 @@ export class Game {
     player.hp += healed;
     this.state.player = player;
     this.triggerFloatPlayer(battle, `+${healed}`, "heal");
+  }
+
+  // ---- status effects (src/systems/statusEffects/, Phase 1.1) ----
+
+  /** Reduces incoming healing while Burn (or anything else with a
+   *  `healingReducedPct`) is active - applied to the player's own HoT tick
+   *  and to potions (useItem), the two real "you drank a potion mid-burn
+   *  and it barely helped" moments. Not applied to Life Steal, which reads
+   *  as the *attacker's* sustain rather than healing the burning unit ever
+   *  requested. */
+  private healingMultiplier(effects: ActiveStatusEffect[]): number {
+    return Math.max(0, 1 - statusHealingReducedPct(effects));
+  }
+
+  /** Resolves one (re)application of a status onto an existing instance
+   *  list per its def's stack rule - "ignore" (Stun) leaves an already-
+   *  active instance alone, "refresh" (most statuses) resets duration and
+   *  snaps magnitude back to the def's full base value (this is how
+   *  Shield "refills" rather than stacking), "stack" (Bleed/Poison) grows
+   *  `stacks` up to the def's cap and refreshes duration alongside it.
+   *  `magnitude` always stays `def.baseMagnitude` - only `stacks` grows,
+   *  matching ActiveStatusEffect's own doc comment. */
+  private mergeStatusEffect(effects: ActiveStatusEffect[], def: StatusEffectDef, source: ActiveStatusEffect["source"]): ActiveStatusEffect[] {
+    const idx = effects.findIndex((e) => e.defId === def.id);
+    if (idx === -1) {
+      return [...effects, { defId: def.id, source, roundsRemaining: def.defaultDuration, stacks: 1, magnitude: def.baseMagnitude }];
+    }
+    if (def.stackRule.kind === "ignore") return effects;
+    const next = [...effects];
+    const cur = next[idx];
+    const stacks = def.stackRule.kind === "stack" ? Math.min(def.stackRule.maxStacks, cur.stacks + 1) : cur.stacks;
+    next[idx] = { ...cur, source, roundsRemaining: def.defaultDuration, magnitude: def.baseMagnitude, stacks };
+    return next;
+  }
+
+  /** Applies one status effect to the player or one enemy unit, looked up
+   *  by id from STATUS_EFFECT_REGISTRY - the single entry point every live
+   *  trigger (enemy specials, Shadow strikes, Random Event Blessings)
+   *  calls through, so `mergeStatusEffect`'s stack-rule handling never has
+   *  to be duplicated at a call site. Silently no-ops on an unknown id. */
+  private applyStatusEffect(battle: BattleState, target: EnemyUnit | "player", defId: string, source: ActiveStatusEffect["source"]) {
+    const def = STATUS_EFFECT_REGISTRY.get(defId);
+    if (!def) return;
+    if (target === "player") {
+      battle.playerStatusEffects = this.mergeStatusEffect(battle.playerStatusEffects, def, source);
+    } else {
+      target.statusEffects = this.mergeStatusEffect(target.statusEffects, def, source);
+    }
+  }
+
+  /** Applies damage to the player - the one shared chokepoint for both a
+   *  normal enemy attack (enemyTurn) and a DoT tick (tickStatusEffects),
+   *  so Vulnerability/Defense Up/Shield have a single place to hook into
+   *  rather than two independently-drifting `player.hp -=` sites. Shield's
+   *  absorb pool (if any) is consumed first; whatever's left after that
+   *  comes off HP. Mutates `battle` directly (over/result/locked on
+   *  defeat) exactly like the inline code this replaces did. Returns the
+   *  HP actually lost, post-mitigation and post-shield (0 if a Shield
+   *  fully absorbed the hit). */
+  private applyDamageToPlayer(battle: BattleState, dmg: number): number {
+    const pct = statusDamageTakenPct(battle.playerStatusEffects);
+    if (pct !== 0) dmg = Math.max(1, Math.round(dmg * (1 + pct)));
+
+    const shieldPool = activeShieldPool(battle.playerStatusEffects);
+    let hpLoss = dmg;
+    if (shieldPool > 0) {
+      const absorbed = Math.min(shieldPool, dmg);
+      hpLoss = dmg - absorbed;
+      // In practice at most one Shield instance is ever active (its stack
+      // rule is "refresh", not "stack") - this still drains correctly even
+      // if that ever changes, just against every instance's own pool.
+      let remaining = absorbed;
+      battle.playerStatusEffects = battle.playerStatusEffects
+        .map((e) => {
+          if (remaining <= 0 || STATUS_EFFECT_REGISTRY.get(e.defId)?.kind.type !== "shield") return e;
+          const take = Math.min(remaining, e.magnitude);
+          remaining -= take;
+          return { ...e, magnitude: e.magnitude - take };
+        })
+        .filter((e) => STATUS_EFFECT_REGISTRY.get(e.defId)?.kind.type !== "shield" || e.magnitude > 0);
+    }
+
+    if (hpLoss > 0) {
+      const player = { ...this.state.player };
+      player.hp = Math.max(0, player.hp - hpLoss);
+      this.state.player = player;
+      if (player.hp <= 0) {
+        battle.over = true;
+        battle.result = "defeat";
+        battle.locked = false;
+      }
+    }
+    return hpLoss;
+  }
+
+  /** Ticks every active status on one unit for one completed round - DoT
+   *  damage (routed through applyDamage/applyDamageToPlayer so a tick that
+   *  finishes a kill or the battle gets the exact same handling a normal
+   *  hit would) and HoT healing resolve first, then every duration counts
+   *  down and anything that hits 0 rounds remaining is dropped. */
+  private tickOne(battle: BattleState, target: EnemyUnit | "player", effects: ActiveStatusEffect[]): ActiveStatusEffect[] {
+    for (const e of effects) {
+      const def = STATUS_EFFECT_REGISTRY.get(e.defId);
+      if (!def) continue;
+      if (def.kind.type === "dot") {
+        const dmg = Math.max(1, Math.round(e.magnitude * e.stacks));
+        if (target === "player") this.applyDamageToPlayer(battle, dmg);
+        else if (target.alive) this.applyDamage(battle, target, dmg, false);
+      } else if (def.kind.type === "hot") {
+        const healMult = target === "player" ? this.healingMultiplier(battle.playerStatusEffects) : 1;
+        const heal = Math.max(0, Math.round(e.magnitude * healMult));
+        if (heal <= 0) continue;
+        if (target === "player") {
+          const maxHp = this.effectiveMaxHp();
+          const player = { ...this.state.player };
+          const healed = Math.min(maxHp, player.hp + heal) - player.hp;
+          if (healed > 0) {
+            player.hp += healed;
+            this.state.player = player;
+            this.triggerFloatPlayer(battle, `+${healed}`, "heal");
+          }
+        } else if (target.alive) {
+          target.hp = Math.min(target.maxHp, target.hp + heal);
+        }
+      }
+    }
+    return effects
+      .map((e) => ({ ...e, roundsRemaining: e.roundsRemaining - 1 }))
+      .filter((e) => e.roundsRemaining > 0);
+  }
+
+  /** Called once per completed round (see enemyTurn's round-completion
+   *  branch, right alongside the existing Mana Regen tick) - ticks the
+   *  player and every still-alive enemy's active statuses. A battle with
+   *  no active statuses anywhere is a no-op on every unit (empty arrays
+   *  tick to empty arrays), so this never changes output for a fight that
+   *  never triggers one. */
+  private tickStatusEffects(battle: BattleState) {
+    if (battle.playerStatusEffects.length) {
+      battle.playerStatusEffects = this.tickOne(battle, "player", battle.playerStatusEffects);
+    }
+    for (const unit of battle.enemies) {
+      if (!unit.alive || unit.statusEffects.length === 0) continue;
+      unit.statusEffects = this.tickOne(battle, unit, unit.statusEffects);
+    }
+  }
+
+  /** The enemy-side live trigger for the whole roster (see ARCHETYPE_STATUS
+   *  in data.ts): a boss's enrage roll guarantees Stun once (self-limiting
+   *  - `enragingNow` is already a one-time flag), an Elite's special has a
+   *  further small chance at Freeze on top of the base roll, and any other
+   *  special has a moderate chance at that gate rank's archetype status.
+   *  Only ever called for a resolved "special" action. */
+  private rollEnemyInflictedStatus(battle: BattleState, enragingNow: boolean, isElite: boolean) {
+    if (enragingNow) {
+      this.applyStatusEffect(battle, "player", "stun", "enemy");
+      return;
+    }
+    if (isElite && Math.random() < 0.15) {
+      this.applyStatusEffect(battle, "player", "freeze", "enemy");
+      return;
+    }
+    if (Math.random() < 0.35) {
+      this.applyStatusEffect(battle, "player", ARCHETYPE_STATUS[ARCHETYPE_BY_RANK[battle.rank]], "enemy");
+    }
+  }
+
+  /** Shared "the player is unable to act this round" resolution - Stun's
+   *  live trigger. Mirrors the existing self-guard-miss branch's shape in
+   *  battleAttack: skips the requested action, still lets a deployed
+   *  Shadow act (real counterplay - a deployed Shadow still carries a
+   *  stunned round), still advances the round exactly like every other
+   *  resolved action does. Deliberately NOT called from useItem - Stun
+   *  should still leave "do I have a potion ready" a real decision, not
+   *  full incapacitation. Returns true if the player was stunned (callers
+   *  should stop immediately after). */
+  private handlePlayerStunned(battle: BattleState): boolean {
+    if (!hasStun(battle.playerStatusEffects)) return false;
+    this.showBattleToast(battle, { text: "You are stunned and cannot act!", kind: "info" });
+    this.companionStrike(battle);
+    this.state.battle = battle;
+    this.notify();
+    if (battle.enemies.every((u) => !u.alive)) this.onWaveCleared(battle);
+    else setTimeout(() => this.enemyTurn(this.state.battle!), 650);
+    return true;
   }
 
   /** A deployed Shadow auto-assists every player action, striking whatever
@@ -1120,6 +1337,14 @@ export class Game {
       if (!tgt.alive) killedAny = true;
       this.clearHitFlagLater(tgt.uid);
       this.applyLifeSteal(battle, dealt, gearLifeStealPct);
+
+      // The counterpart to ARCHETYPE_STATUS's enemy-side roll (see
+      // rollEnemyInflictedStatus) - a deployed Shadow now has a defensive/
+      // utility angle beyond its existing passive/active kit, themed the
+      // same way its own archetype already themes its skills.
+      if (tgt.alive && Math.random() < 0.2) {
+        this.applyStatusEffect(battle, tgt, ARCHETYPE_STATUS[shadow.archetype], "shadow");
+      }
 
       if (passive.effect.key === "manaOnHit") {
         const maxMp = this.effectiveMaxMp();
@@ -1347,7 +1572,7 @@ export class Game {
     const event = rollRandomEvent(true);
     if (event) {
       this.incrementCounter(COUNTER_KEYS.randomEventsTriggered);
-      this.applyRandomEvent(event, gate.rank);
+      this.applyRandomEvent(event, gate.rank, battle);
       if (event.effect.kind === "ambush") {
         enemies.push(this.makeTrashUnit(gate, 0, 0, modifier, true));
       }
@@ -1362,7 +1587,13 @@ export class Game {
       over: false, result: null, guardRounds: 0, locked: false,
       playerHit: false, skillPanelOpen: false, itemPanelOpen: false,
       vfxPlayer: null, guardRing: false, lunge: null, flash: false,
-      floatPlayer: null, playerGlow: false, shadowLunge: false, bossEnraged: false
+      floatPlayer: null, playerGlow: false, shadowLunge: false, bossEnraged: false,
+      // Carries wave-to-wave the same way HP/MP already do - this method
+      // builds a brand-new BattleState rather than spreading the old one
+      // (see the doc comment above), so unlike advanceWave's `...battle`
+      // spread, this has to be explicit or a status would silently vanish
+      // every floor transition.
+      playerStatusEffects: battle.playerStatusEffects
     };
     this.notify();
   }
@@ -1432,8 +1663,18 @@ export class Game {
           const maxMp = this.effectiveMaxMp();
           this.state.player = { ...this.state.player, mp: Math.min(maxMp, this.state.player.mp + manaRegen) };
         }
-        this.state.battle = { ...battle, guardRounds, locked: false };
+        // Status ticks (DoT/HoT/duration countdown) - once per completed
+        // round, right alongside Mana Regen above. Cloned first since
+        // tickStatusEffects can mutate enemy units/end the battle through
+        // applyDamage/applyDamageToPlayer, the same "clone, mutate, then
+        // assign+notify" shape every other branch in this method uses.
+        const next = this.cloneBattle(battle);
+        next.guardRounds = guardRounds;
+        next.locked = false;
+        this.tickStatusEffects(next);
+        this.state.battle = next;
         this.notify();
+        if (!next.over && next.enemies.every((u) => !u.alive)) this.onWaveCleared(next);
         return;
       }
       const found = battle.enemies.find((u) => u.uid === attackers[i]);
@@ -1450,7 +1691,23 @@ export class Game {
       // the announcement only fires once per boss, not every enraged round.
       const enragingNow = battle.isBossWave && !battle.bossEnraged && attacker.hp <= attacker.maxHp * Game.BOSS_ENRAGE_HP_PCT;
       if (enragingNow) next.bossEnraged = true;
-      const action = this.decideEnemyAction(attacker, next, wasGuardingRound);
+
+      // Stun/Freeze (see systems/statusEffects/) - resolved before the AI
+      // even decides an action, the same "skip this unit outright" spot
+      // the dead-unit check just above already uses.
+      if (hasStun(attacker.statusEffects) || rollFreezeSkip(attacker.statusEffects)) {
+        this.showBattleToast(next, { text: `${attacker.name} is unable to act!`, kind: "info" });
+        this.state.battle = next;
+        this.notify();
+        setTimeout(() => step(i + 1), 480);
+        return;
+      }
+
+      const decided = this.decideEnemyAction(attacker, next, wasGuardingRound);
+      // Silence downgrades a chosen "special" down to a plain attack -
+      // decideEnemyAction's own decision logic stays untouched, this just
+      // clamps its result afterward.
+      const action = decided === "special" && hasSilence(attacker.statusEffects) ? "attack" : decided;
 
       if (action === "guard") {
         attacker.guardRounds = 1;
@@ -1485,16 +1742,14 @@ export class Game {
       if (enragingNow) this.showBattleToast(next, { text: `${attacker.name} grows desperate and unleashes a fierce strike!`, kind: "info" });
       else if (isSpecial) this.showBattleToast(next, { text: `${attacker.name} unleashes a fierce strike!`, kind: "info" });
 
-      const player = { ...this.state.player };
-      player.hp = Math.max(0, player.hp - dmg);
       next.playerHit = true;
-      this.state.player = player;
-      this.triggerFloatPlayer(next, `-${dmg}`, "dmg");
+      const hpLoss = this.applyDamageToPlayer(next, dmg);
+      this.triggerFloatPlayer(next, hpLoss > 0 ? `-${hpLoss}` : "Blocked", hpLoss > 0 ? "dmg" : "miss");
+      // Enemy -> player status infliction (see ARCHETYPE_STATUS) - only a
+      // resolved special attack rolls for it, never a plain hit.
+      if (isSpecial) this.rollEnemyInflictedStatus(next, enragingNow, attacker.isElite);
 
-      if (player.hp <= 0) {
-        next.over = true;
-        next.result = "defeat";
-        next.locked = false;
+      if (next.over) {
         this.state.battle = next;
         this.notify();
         return;
@@ -1536,6 +1791,8 @@ export class Game {
     if (!target) return;
     battle.locked = true;
 
+    if (this.handlePlayerStunned(battle)) return;
+
     if (battle.guardRounds > 0 && Math.random() < this.selfGuardMissChance()) {
       this.playPlayerVfx(battle, { lunge: "player" });
       this.triggerUnitFloat(target, "Miss", "miss");
@@ -1547,7 +1804,7 @@ export class Game {
       return;
     }
 
-    const { dmg, isCrit } = this.rollBasicAttack(target);
+    const { dmg, isCrit } = this.rollBasicAttack(target, battle.playerStatusEffects);
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy: isCrit });
     this.setUnitVfx(target, isCrit ? "flurry" : "slash");
     const dealtDmg = this.applyDamage(battle, target, dmg, isCrit);
@@ -1561,7 +1818,7 @@ export class Game {
     // companionStrike already uses for the Shadow's own hit.
     const atkSpeedPct = this.equipmentAffixSum("attackSpeed");
     if (atkSpeedPct > 0 && target.alive && Math.random() * 100 < atkSpeedPct) {
-      const extra = this.rollBasicAttack(target);
+      const extra = this.rollBasicAttack(target, battle.playerStatusEffects);
       this.setUnitVfx(target, extra.isCrit ? "flurry" : "slash");
       const extraDealt = this.applyDamage(battle, target, extra.dmg, extra.isCrit);
       this.applyLifeSteal(battle, extraDealt, this.equipmentAffixSum("lifeSteal"));
@@ -1582,12 +1839,22 @@ export class Game {
     if (!skillDef) return;
     if (this.state.player.level < skillDef.unlockLevel) return;
     if (this.state.player.mp < skillDef.mpCost) return;
+    // Silence blocks Skills outright - unlike Stun (handlePlayerStunned),
+    // this is a plain rejected-action early return, no battle mutation at
+    // all, the same shape the MP/level checks just above already use, so
+    // it never costs the player a round just for trying.
+    if (hasSilence(src.playerStatusEffects)) {
+      this.showGlobalToast("Silenced! Cannot use Skills.", "info");
+      return;
+    }
 
     const battle = this.cloneBattle(src);
     battle.skillPanelOpen = false;
     const alive = battle.enemies.filter((u) => u.alive);
     if (alive.length === 0) return;
     battle.locked = true;
+
+    if (this.handlePlayerStunned(battle)) return;
 
     const player = { ...this.state.player, mp: this.state.player.mp - skillDef.mpCost };
     const str = this.effectiveStat("str");
@@ -1604,13 +1871,14 @@ export class Game {
     this.playPlayerVfx(battle, { lunge: "player", flash: true, heavy });
     const fireDamage = this.equipmentAffixSum("fireDamage");
     const cls = this.equippedHunterClass();
-    const classSkillPct = cls?.bonus.kind === "skillDamagePct" ? cls.bonus.value : 0;
+    let skillDealtPct = cls?.bonus.kind === "skillDamagePct" ? cls.bonus.value : 0;
+    skillDealtPct += statusDamageDealtPct(battle.playerStatusEffects);
     let totalDealt = 0;
     for (const target of targets) {
       const isCrit = this.rollCrit();
       let dmg = Math.max(1, Math.round(skillDef.base + str * skillDef.scale + fireDamage - target.def + (Math.random() * 4 - 2)));
       if (skillDef.kind === "execute" && target.hp <= target.maxHp * 0.3) dmg *= 2;
-      if (classSkillPct > 0) dmg = Math.round(dmg * (1 + classSkillPct));
+      if (skillDealtPct !== 0) dmg = Math.max(1, Math.round(dmg * (1 + skillDealtPct)));
       if (isCrit) dmg = Math.round(dmg * this.critMultiplier());
       this.setUnitVfx(target, skillDef.kind === "single" && !isCrit ? "slash" : "flurry");
       totalDealt += this.applyDamage(battle, target, dmg, isCrit);
@@ -1645,6 +1913,9 @@ export class Game {
     if (!src || src.over || src.locked) return;
     const battle = this.cloneBattle(src);
     battle.locked = true;
+
+    if (this.handlePlayerStunned(battle)) return;
+
     battle.guardRounds = 1 + Math.floor(Math.random() * 3); // 1-3 rounds, re-rolled each use
     battle.skillPanelOpen = false;
     this.playPlayerVfx(battle, { guard: true });
@@ -1671,7 +1942,11 @@ export class Game {
     // restoring more of.
     const cls = this.equippedHunterClass();
     const classHealPct = def.kind === "hp" && cls?.bonus.kind === "potionHealPct" ? cls.bonus.value : 0;
-    const amount = classHealPct > 0 ? Math.round(def.amount * (1 + classHealPct)) : def.amount;
+    let amount = classHealPct > 0 ? Math.round(def.amount * (1 + classHealPct)) : def.amount;
+    // Burn's healingReducedPct (see systems/statusEffects/) - the "you
+    // drank a potion mid-burn and it barely helped" moment. HP potions
+    // only, same scope as the Healer bonus just above.
+    if (def.kind === "hp") amount = Math.max(1, Math.round(amount * this.healingMultiplier(battle.playerStatusEffects)));
     if (def.kind === "hp") player.hp = Math.min(this.effectiveMaxHp(), player.hp + amount);
     else player.mp = Math.min(this.effectiveMaxMp(), player.mp + amount);
     const potions = { ...this.state.inventory.potions, [potionId]: count - 1 };

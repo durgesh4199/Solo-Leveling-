@@ -246,6 +246,24 @@ export interface FloatText {
   kind: FloatKind;
 }
 
+/** One live application of a status effect (see systems/statusEffects/)
+ *  on a unit - a runtime battle instance, not persisted content (see
+ *  StatusEffectDef for the fixed definition `defId` resolves through
+ *  STATUS_EFFECT_REGISTRY). Lives only inside BattleState/EnemyUnit,
+ *  neither of which is part of SavedGameState, so this needs no save
+ *  migration at all - a save mid-fight already drops back to the gate
+ *  list regardless (see SavedGameState's own doc comment). `magnitude`
+ *  is normally `def.baseMagnitude` verbatim and stays fixed for the
+ *  effect's lifetime, except a Shield's absorb pool, which decrements as
+ *  it's actually consumed. */
+export interface ActiveStatusEffect {
+  defId: string;
+  source: "player" | "shadow" | "enemy";
+  roundsRemaining: number;
+  stacks: number;
+  magnitude: number;
+}
+
 /** One enemy within the current wave's group. Each trash unit is rolled its
  *  own species name (one of the gate's 5 enemyTypes, each with its own
  *  stat-weight flavor - see TYPE_VARIANTS in data.ts); the whole wave still
@@ -270,6 +288,7 @@ export interface EnemyUnit {
   /** Rounds left where a hit against this unit is reduced - set when the
    *  enemy AI chooses to block instead of attacking. */
   guardRounds: number;
+  statusEffects: ActiveStatusEffect[];
 }
 
 export interface BattleToast {
@@ -321,6 +340,15 @@ export interface BattleState {
    *  regular special already gets, so the phase-change moment actually
    *  reads as a moment instead of silently making the boss tougher. */
   bossEnraged?: boolean;
+
+  /** Statuses currently active on the Hunter (see ActiveStatusEffect) -
+   *  carries wave-to-wave (and Tower floor-to-floor) within one run the
+   *  same way HP/MP already do, since a Bleed a boss just inflicted
+   *  shouldn't vanish the instant the next wave starts. Only a fresh
+   *  `startBattle` (a real new gate entry) resets it to []. Each
+   *  EnemyUnit carries its own equivalent list directly on itself
+   *  instead, since a fresh set of enemies spawns every wave anyway. */
+  playerStatusEffects: ActiveStatusEffect[];
 
   toast?: BattleToast | null;
   toastId?: number;

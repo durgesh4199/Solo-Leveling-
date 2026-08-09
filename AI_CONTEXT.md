@@ -1076,6 +1076,73 @@ pulses gold whenever it increases).
   actions "what carries over" genuinely isn't guessable without reading
   the code.
 
+## Status Effect Framework (Phase 1.1 of the Next-Generation Expansion Spec)
+
+The fixed 20-item `EXPANSION_ROADMAP.md` order above is complete; this is
+the first milestone of the follow-on spec the project owner handed over
+next. Full writeup lives in `EXPANSION_ROADMAP.md`'s own "Next-Generation
+Feature Expansion Spec" section - summarized here for the same
+system-by-system reference this file already gives every other feature.
+
+- **`src/systems/statusEffects/`** - `types.ts`'s `StatusEffectKind` (9
+  kinds: `dot`, `hot`, `shield`, `stun`, `chanceToSkipAction`, `silence`,
+  `damageDealtPct`, `damageTakenPct`, `critChanceFlat`) and
+  `StatusStackRule` (`stack`+cap / `refresh` / `ignore`) are the same
+  "few kinds, many flavored entries" shape `TitleBonus`/`TalentBonus`/
+  `RelicBonus`/`SetBonus` already use. `data.ts`'s 13-entry
+  `STATUS_EFFECTS` (Bleed, Poison, Burn, Freeze, Stun, Silence, Weakness,
+  Attack Up, Vulnerability, Defense Up, Regeneration, Shield, Crit Up) +
+  `STATUS_EFFECT_REGISTRY` + pure per-array aggregation helpers
+  (`statusDamageDealtPct`, `statusDamageTakenPct`, `statusCritChanceFlat`,
+  `statusHealingReducedPct`, `hasStun`, `hasSilence`, `rollFreezeSkip`,
+  `activeShieldPool`).
+- **`ActiveStatusEffect`** (root `types.ts`) - a runtime instance
+  (`defId`, `source`, `roundsRemaining`, `stacks`, `magnitude`) on
+  `EnemyUnit.statusEffects` and `BattleState.playerStatusEffects`. No
+  save migration - `SavedGameState` already excludes `battle` wholesale,
+  so neither array ever reaches `persistNow()`. `playerStatusEffects`
+  persists wave-to-wave/floor-to-floor exactly like HP/MP (only a fresh
+  `startBattle` clears it - `advanceWave`'s `...battle` spread carries it
+  implicitly, `advanceTowerFloor` carries it explicitly since that method
+  builds a from-scratch `BattleState` rather than spreading the old one).
+- **Engine (`store.ts`)** - `applyStatusEffect`/`mergeStatusEffect` (the
+  one entry point for every trigger); `tickStatusEffects`/`tickOne`
+  (once per completed round, alongside the existing Mana Regen tick;
+  DoT/HoT route through `applyDamage`/`applyDamageToPlayer` so a
+  tick that finishes a kill or the battle gets the exact same handling a
+  normal hit would); a new `applyDamageToPlayer` chokepoint (there wasn't
+  one before - `enemyTurn` had an inline `player.hp -=`), where
+  Vulnerability/Defense Up (`damageTakenPct`) and Shield's absorb pool
+  now hook in; `applyDamage` (enemy-directed) gained the same
+  `damageTakenPct` term; `rollBasicAttack`/`useSkill` fold in
+  `damageDealtPct`; `critChance` gained `statusCritChanceFlat`; a shared
+  `handlePlayerStunned` (mirrors the existing self-guard-miss branch's
+  shape) wired into `battleAttack`/`useSkill`/`battleGuard` - not
+  `useItem`, so a stunned Hunter still has one real decision (potion or
+  not) instead of full incapacitation.
+- **Five live triggers, all reusing existing structures** (deliberately
+  not touching Skills or Sockets, the next two milestones): a new
+  `ARCHETYPE_STATUS` map (`data.ts`) themes each of the six monster
+  archetypes with one status; enemy specials in `enemyTurn` roll it onto
+  the player (boss enrage guarantees Stun, Elite adds a Freeze roll,
+  otherwise 35% for the archetype status), with Silence downgrading a
+  chosen "special" back to a plain attack; `companionStrike` rolls a 20%
+  chance for the deployed Shadow's own archetype status onto its target;
+  a new `{ kind: "blessing" }` `RandomEventEffect` grants a random buff
+  from `BLESSING_STATUS_IDS` (`applyRandomEvent` gained a `battle`
+  parameter for this, same "special-cased where the live battle is in
+  scope" shape `"ambush"` already established); Stun/Freeze pre-empt an
+  enemy's turn in `enemyTurn`'s `step()`, mirroring the existing
+  dead-unit skip.
+- **UI (`screens/battle.ts`)** - a small icon-badge row (`statusIconsHtml`)
+  on the player (`#player-status-row`) and every enemy card
+  (`.status-row`), read directly off `battle.playerStatusEffects`/
+  `unit.statusEffects` inside the screen's existing `update()` sync loop -
+  no new render/timer mechanism, buffs green / debuffs red.
+- **Deliberately deferred**: Skills and Equipment Sockets are untouched -
+  both will add *more sources* onto this same 13-status roster (Phase 1.2
+  / 1.3) rather than a second parallel system.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -1153,18 +1220,25 @@ Arise, level-up, dissolve).
   Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers ✅ →
   Random Events ✅ → Better Enemy AI ✅ → Crafting ✅ → Relics ✅ → Equipment
   Sets ✅ → Infinite Tower ✅ → Achievements ✅ → Titles ✅ → Prestige ✅. All
-  20 items are now done. Always check `EXPANSION_ROADMAP.md` for current
-  status before starting any further expansion work - the "wait for an
-  explicit go-ahead, don't reorder or batch items" rule still applies to
-  whatever comes after this fixed list (growing existing rosters, real
-  art, sound, etc.).
+  20 items are now done. A follow-on **Next-Generation Feature Expansion
+  Spec** (19 more items, 4 phases) is in progress on top of it - Phase 1.1
+  (Status Effect Framework) ✅, see `EXPANSION_ROADMAP.md`'s own section
+  for the rest. Always check `EXPANSION_ROADMAP.md` for current status
+  before starting any further expansion work - the "wait for an explicit
+  go-ahead, don't reorder or batch items" rule still applies.
 
 ## Workflow notes for whoever picks this up next
 
-- **No Playwright / browser self-testing** — this is a standing user
-  instruction. The user takes their own screenshots and reports problems.
-  Verify non-visual logic (drop rates, formulas) with plain Node scripts
-  (`npx tsx -e "..."` importing from `src/`) instead.
+- **Verify non-visual logic** (drop rates, formulas, stack rules) with
+  plain Node/`tsx` scripts importing straight from `src/` - fast, no
+  browser needed, and the natural place to pin down pure-function
+  correctness before touching the engine at all.
+- **Live-engine/UI verification uses Playwright** against a `vite
+  preview` build, driven through a temporary `(window as any).__game =
+  game;` debug hook added to `main.ts` - call straight into `Game`'s
+  methods (including its `private`-at-compile-time-only ones) from
+  `page.evaluate`, or click through the real UI, then check `game.state`/
+  the DOM/console errors. Always revert the debug hook before committing.
 - **Publish pipeline**: `npx tsc -b --noEmit` → `npm run build` → inline
   `dist/index.html` + its hashed CSS/JS into one self-contained HTML file
   (Python one-liner, see recent commits for the exact script) → `Artifact`

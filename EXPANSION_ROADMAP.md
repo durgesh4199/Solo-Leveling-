@@ -929,6 +929,134 @@ touching anything below.
 > rebuilt later. Everything from here forward follows the fixed order
 > above with no more reordering.
 
+## Next-Generation Feature Expansion Spec
+
+The fixed 20-item roadmap above is complete. The project owner has since
+handed over a larger **Next-Generation Feature Expansion Specification**
+(19 more items across four phases - Combat Depth, Content Depth, Long-Term
+Engagement, Advanced Endgame) to work through the same way: one milestone
+at a time, verified before the next starts, no reordering without an
+explicit go-ahead. Its own protocol layers on top of the standing rules
+above (inspect the repo, identify existing infra to reuse, present a plan,
+use `systems/<feature>/` + `Registry<T>`, save-migrate anything persisted,
+fold new stat axes into the shared additive-pct pipeline where they
+belong).
+
+### Phase 1.1 — Status Effect Framework ✅
+
+Duration-based buffs/debuffs did not exist in the battle engine at all
+before this milestone - the only "N rounds remaining" mechanic was Guard
+(`guardRounds`), and it was single-purpose. This milestone built real,
+general-purpose status infrastructure and shipped the full 13-status
+roster named in the spec, live-triggered through five existing structures
+rather than inventing new ones.
+
+- **New module `src/systems/statusEffects/`** - `types.ts` defines
+  `StatusEffectKind` (9 reusable mechanical kinds: `dot`, `hot`, `shield`,
+  `stun`, `chanceToSkipAction`, `silence`, `damageDealtPct`,
+  `damageTakenPct`, `critChanceFlat`) and `StatusStackRule` (`stack` with
+  a cap, `refresh`, or `ignore`) - the same "few kinds, many flavored
+  entries" shape `TitleBonus`/`TalentBonus`/`RelicBonus`/`SetBonus`
+  already use. `data.ts` holds the 13-entry `STATUS_EFFECTS` roster
+  (Bleed, Poison, Burn, Freeze, Stun, Silence, Weakness, Attack Up,
+  Vulnerability, Defense Up, Regeneration, Shield, Crit Up),
+  `STATUS_EFFECT_REGISTRY`, `BLESSING_STATUS_IDS`, and pure aggregation
+  helpers (`statusDamageDealtPct`, `statusDamageTakenPct`,
+  `statusCritChanceFlat`, `statusHealingReducedPct`, `hasStun`,
+  `hasSilence`, `rollFreezeSkip`, `activeShieldPool`) over a plain
+  `ActiveStatusEffect[]` - no class, no hidden state, same shape every
+  other bonus system's helpers already take.
+- **Runtime state, no save migration needed** - `ActiveStatusEffect` (in
+  root `types.ts`) is a live instance (`defId`, `source`,
+  `roundsRemaining`, `stacks`, `magnitude`), added as `EnemyUnit.
+  statusEffects` and `BattleState.playerStatusEffects`. `SavedGameState`
+  already excludes `battle` entirely (an in-progress fight never survives
+  a save/reload), so both new arrays never touch `persistNow()` - the
+  cleanest possible migration story: none needed. `playerStatusEffects`
+  carries wave-to-wave and floor-to-floor exactly the way HP/MP already
+  do (only a fresh `startBattle` resets it).
+- **Engine hooks in `store.ts`** - `applyStatusEffect`/
+  `mergeStatusEffect` (the single entry point every trigger below calls
+  through, so stack-rule handling lives in one place); `tickStatusEffects`/
+  `tickOne`, called once per completed round in `enemyTurn` right
+  alongside the existing Mana Regen tick; a new `applyDamageToPlayer`
+  chokepoint (there was previously no shared one - `enemyTurn` did an
+  inline `player.hp -=`), which Vulnerability/Defense Up/Shield now hook
+  into, used by both a normal enemy hit and a DoT tick against the player
+  so a lethal tick ends the battle exactly like a lethal hit does;
+  `applyDamage` (the existing enemy-directed chokepoint) gained the same
+  `damageTakenPct` term; `rollBasicAttack`/`useSkill` fold in
+  `damageDealtPct` alongside the existing class-bonus percentage; the
+  `critChance` getter gained `statusCritChanceFlat`; a shared
+  `handlePlayerStunned` helper (mirrors the existing self-guard-miss
+  branch's shape: skip the action, still let a deployed Shadow act, still
+  advance the round) wired into `battleAttack`/`useSkill`/`battleGuard` -
+  deliberately **not** wired into `useItem`, so a stunned Hunter still has
+  one real decision left (use a potion or not) instead of full
+  incapacitation.
+- **Five live triggers, all reusing existing structures** (nothing built
+  that Skill Upgrades/Sockets+Gems/Shadow Traits below would need to
+  rework):
+  1. A new `ARCHETYPE_STATUS: Record<Archetype, string>` in `data.ts`
+     thematically pairs each of the six existing monster archetypes with
+     one status (goblin→Bleed, orc→Weakness, wraith→Silence,
+     knight→Vulnerability, beast→Poison, wyrm→Burn).
+  2. **Enemy → player**: any resolved "special" attack in `enemyTurn`
+     rolls `rollEnemyInflictedStatus` - a boss's enrage (the existing
+     one-time `enragingNow` flag) guarantees Stun, an Elite's special
+     additionally rolls 15% for Freeze, otherwise 35% for that gate
+     rank's archetype status. Silence also downgrades a chosen "special"
+     back down to a plain attack afterward (the AI's own decision logic
+     is untouched).
+  3. **Shadow → enemy**: `companionStrike`'s `strike()` closure rolls a
+     20% chance per landed hit to apply the deployed Shadow's own
+     archetype status to its target - the defensive/utility counterpart
+     to the enemy-side table, with zero changes to `SHADOW_SKILLS` data
+     or the `ShadowActiveEffect`/`ShadowPassiveEffect` unions.
+  4. **Random Event "Blessing"** - `RandomEventEffect` gained a
+     `{ kind: "blessing" }` case (its own doc comment had flagged this
+     exact gap since Random Events shipped); resolves a random pick from
+     `BLESSING_STATUS_IDS` (Regeneration, Shield, Attack Up, Defense Up,
+     Crit Up) onto the player, following the same "special-cased by the
+     caller, not `applyRandomEvent` itself" shape `"ambush"` already set
+     - except `applyRandomEvent` now takes the live `battle` as a third
+     parameter (Blessing needs it to attach a status to; Ambush still
+     doesn't, since it needs the *freshly generated* enemies array
+     instead).
+  5. Player-side Stun/Freeze/Silence: `enemyTurn`'s per-attacker `step()`
+     checks Stun/Freeze on the acting enemy before `decideEnemyAction`
+     even runs (mirrors the existing dead-unit skip), and the player's
+     own three action methods check Stun via `handlePlayerStunned`;
+     Silence blocks `useSkill()` outright as a plain rejected-action
+     early return (no MP spent, no round consumed - the same shape the
+     existing MP/level checks already use).
+- **UI** - a small icon-badge row (icon + stack count if >1, full
+  name/description/duration in the tooltip, green for buffs / red for
+  debuffs) on the player (`#player-status-row`, next to the HP bar) and
+  on every enemy card (`.status-row`, under its mini HP bar) in
+  `screens/battle.ts` - read directly off `battle.playerStatusEffects`/
+  `unit.statusEffects` inside the screen's existing `update()` sync loop,
+  no new render/timer mechanism.
+- **Verified**: a standalone pure-logic script (roster shape, every
+  aggregation helper, `rollFreezeSkip` with a stubbed `Math.random`,
+  `activeShieldPool`, DoT stack-math) plus a live-`Game` Playwright pass
+  driving the real engine through a temporary debug hook (stack/refresh/
+  ignore rules via repeated `applyStatusEffect`; `applyDamageToPlayer`
+  regression-safe at 100 raw dmg with zero statuses; Shield fully then
+  partially absorbing consecutive hits; Vulnerability's +20% landing
+  exactly; Poison's stack-scaled tick damage; Regeneration's tick heal;
+  Stun's exact 1-round expiry; Burn reducing a potion's heal; a Stunned
+  player's `battleAttack()` dealing zero damage while still advancing the
+  round; a Silenced player's `useSkill()` rejected with MP untouched; the
+  status icon rows actually rendering in the DOM) - zero console errors
+  the whole run. `npx tsc -b --noEmit` and `npm run build` both clean.
+- **What's still deferred, on purpose**: Skills (`SKILLS`/`useSkill`'s
+  kind-branching) and Equipment Sockets are untouched - those are Phase
+  1.2 and 1.3 below, and either would need rework if this milestone had
+  preempted them. Both will add *more sources* for this same 13-status
+  roster (a Skill that applies Burn on hit, a Gem that grants Shield on
+  Guard, ...) rather than a second parallel status system.
+
 ## Balancing guardrails (apply to every phase, not just one)
 
 - No exponential stat inflation - every new multiplicative system

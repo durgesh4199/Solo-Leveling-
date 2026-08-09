@@ -5,7 +5,8 @@ import { AURA_TIER, PLAYER_RANK_GLOW, enemyPortrait, hunterPortrait, playerAuraH
 import { ShaderFX } from "../fx/ShaderFX";
 import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS, SKILL_REGISTRY } from "../data";
 import { towerFloorFromGateId } from "../systems/tower/data";
-import type { EnemyUnit } from "../types";
+import { STATUS_EFFECT_REGISTRY } from "../systems/statusEffects/data";
+import type { ActiveStatusEffect, EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
 const VIOLET_SOFT = "#b5abfc";
@@ -20,6 +21,26 @@ function center(canvas: HTMLElement, target: HTMLElement) {
   const c = canvas.getBoundingClientRect();
   const t = target.getBoundingClientRect();
   return { x: t.left + t.width / 2 - c.left, y: t.top + t.height / 2 - c.top };
+}
+
+/** Small icon-badge row for a unit's active statuses (see
+ *  systems/statusEffects/) - stack count (if >1) as a superscript, full
+ *  name/rounds-remaining/stacks in the tooltip. Buffs read green, debuffs
+ *  read blood-red, mirroring the same positive/negative color language
+ *  the rest of the battle screen already uses (float text, life steal). */
+function statusIconsHtml(effects: ActiveStatusEffect[]): string {
+  return effects
+    .map((e) => {
+      const def = STATUS_EFFECT_REGISTRY.get(e.defId);
+      if (!def) return "";
+      const title = `${def.name} - ${def.description} (${e.roundsRemaining} rd${e.roundsRemaining === 1 ? "" : "s"}${e.stacks > 1 ? `, x${e.stacks}` : ""})`;
+      return `
+        <span class="status-chip" title="${title}" style="display:inline-flex;align-items:center;gap:2px;padding:2px 5px;border-radius:999px;font-size:9px;font-weight:600;line-height:1;background:${def.positive ? "rgba(126,214,152,0.16)" : "rgba(224,52,43,0.16)"};color:${def.positive ? "#7ed698" : "#ff7a70"};">
+          ${icon(def.icon as any, "11px")}${e.stacks > 1 ? `<b>${e.stacks}</b>` : ""}
+        </span>
+      `;
+    })
+    .join("");
 }
 
 function enemySlotHtml(unit: EnemyUnit, art: string, isBoss: boolean, small: boolean): string {
@@ -39,6 +60,7 @@ function enemySlotHtml(unit: EnemyUnit, art: string, isBoss: boolean, small: boo
       <div class="mini-enemy-name" style="font-size:10px;color:var(--color-neutral-400);max-width:${small ? 72 : 110}px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${unit.name}</div>
       <div class="mini-hp-track bar-track" style="width:${small ? 68 : 100}px;height:5px;"><div class="mini-hp-fill bar-fill" style="background:var(--color-neutral-400);"></div></div>
       <div class="mini-hp-text" style="font-size:10px;color:var(--color-neutral-500);font-variant-numeric:tabular-nums;"></div>
+      <div class="status-row" style="display:flex;gap:3px;flex-wrap:wrap;justify-content:center;max-width:${small ? 72 : 110}px;"></div>
     </div>
   `;
 }
@@ -107,6 +129,7 @@ export const battleScreen: ScreenModule = (root, game) => {
           <div id="player-name" style="font-size:15px;font-weight:500;"></div>
           <div id="player-hp-text" style="font-size:11px;color:var(--color-neutral-500);"></div>
         </div>
+        <div id="player-status-row" style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;"></div>
         <div id="player-hp-track" class="bar-track" style="margin-bottom:var(--space-2);"><div id="player-hp-fill" class="bar-fill" style="background:var(--color-accent-400);"></div></div>
         <div class="bar-track"><div id="player-mp-fill" class="bar-fill" style="background:var(--color-neutral-500);"></div></div>
       </div>
@@ -170,6 +193,7 @@ export const battleScreen: ScreenModule = (root, game) => {
   const combatDetailsEl = $("#combat-details");
   const playerNameEl = $("#player-name");
   const playerHpText = $("#player-hp-text");
+  const playerStatusRow = $("#player-status-row");
   const playerHpFill = $("#player-hp-fill");
   const playerHpTrack = $("#player-hp-track");
   const playerMpFill = $("#player-mp-fill");
@@ -418,6 +442,7 @@ export const battleScreen: ScreenModule = (root, game) => {
       const hpFill = slot.querySelector<HTMLElement>(".mini-hp-fill")!;
       const hpText = slot.querySelector<HTMLElement>(".mini-hp-text")!;
       const guardBadgeEl = slot.querySelector<HTMLElement>(".guard-badge")!;
+      const statusRowEl = slot.querySelector<HTMLElement>(".status-row")!;
 
       slot.style.opacity = unit.alive ? "1" : "0.18";
       slot.style.filter = unit.alive ? "none" : "grayscale(1)";
@@ -430,6 +455,7 @@ export const battleScreen: ScreenModule = (root, game) => {
       flareEl.style.display = unit.vfx === "flurry" ? "block" : "none";
       portraitEl.classList.toggle("lunge-down", unit.lunging);
       guardBadgeEl.style.display = unit.guardRounds > 0 ? "flex" : "none";
+      statusRowEl.innerHTML = statusIconsHtml(unit.statusEffects);
 
       if (unit.floatText) {
         floatEl.textContent = unit.floatText.text;
@@ -444,6 +470,7 @@ export const battleScreen: ScreenModule = (root, game) => {
     const maxMp = game.effectiveMaxMp();
     playerNameEl.textContent = p.name;
     playerHpText.textContent = `${p.hp} / ${maxHp} HP`;
+    playerStatusRow.innerHTML = statusIconsHtml(b.playerStatusEffects);
     playerHpFill.style.width = `${Math.round((p.hp / maxHp) * 100)}%`;
     playerHpTrack.classList.toggle("hit", !!b.playerHit);
     playerMpFill.style.width = `${Math.round((p.mp / maxMp) * 100)}%`;

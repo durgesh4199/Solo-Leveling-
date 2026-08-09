@@ -50,9 +50,10 @@ engine, no external art/font dependencies — built to run on:
   extra happening before the next one starts: a **Gold Cache**, a
   **Hidden Cache** (bonus gear), a **Healing Spring** (partial HP/MP
   restore), an **Ambush** (one bonus enemy joins the next fight - never
-  right before a boss wave), or a **Toll Shrine** (a small HP cost for a
+  right before a boss wave), a **Toll Shrine** (a small HP cost for a
   bigger gold payout than a plain Gold Cache - never enough to end a run
-  on its own)
+  on its own), or an **Ancient Blessing** (a random beneficial Status
+  Effect - see below)
 - **Infinite Tower** — a new **Tower** tab: a single, endless column of
   boss-only floors, no trash, no fixed end. Every climb starts fresh at
   Floor 1 and pushes as high as one continuous run can carry it - HP/MP
@@ -84,6 +85,21 @@ engine, no external art/font dependencies — built to run on:
   Every landed hit - yours, a Shadow's, or an enemy's - reads blood red
   (float numbers, impact glow, screen flash); non-damage effects (guard,
   Arise, level-up) stay violet. Feedback is purely visual - no text log
+- **Status Effects** — 13 duration-based buffs/debuffs (small icon rows on
+  the player and every enemy card, hover for details): **Bleed**/
+  **Poison** (stacking damage over time), **Burn** (damage over time +
+  reduced healing), **Freeze** (a chance each round to lose the turn),
+  **Stun** (skips the round outright), **Silence** (blocks Skills),
+  **Weakness**/**Attack Up** (damage dealt down/up), **Vulnerability**/
+  **Defense Up** (damage taken up/down), **Regeneration** (healing over
+  time), **Shield** (a flat damage-absorb pool), and **Crit Up**. Each of
+  the six monster families favors a themed status on its special attacks
+  (goblins Bleed, orcs Weaken, wraiths Silence, knights make you
+  Vulnerable, beasts Poison, wyrms Burn) - a boss's Enrage always lands a
+  guaranteed Stun, an Elite's special can also Freeze you. A deployed
+  Shadow returns the favor, inflicting its own archetype's status back
+  onto whatever it strikes. The rare **Blessing** Random Event grants a
+  random beneficial one instead of an instant reward
 - **Skills** — unlock progressively with level, opened via a picker panel
   (locked ones show their unlock level): **Dagger Rush** (Lv 1, heavy
   single hit), **Piercing Thrust** (Lv 5, hits the front 2 enemies),
@@ -396,6 +412,9 @@ system rather than a stub) is now complete — Equipment Sets, the
 Infinite Tower, and Prestige/Reawakening below join Titles, Achievements,
 Shadow Evolution, the Talent Tree, Hunter Classes, Promotion Exams,
 Dungeon Modifiers, Random Events, Better Enemy AI, Crafting, and Relics.
-Further growth (Daily/Weekly missions, combat status effects, growing the
-Titles/Achievements/Relics/Set rosters, and more) lives in that same file
-as unplanned future work, not a numbered next item.
+A follow-on **Next-Generation Feature Expansion Spec** (19 more items, 4
+phases) is now underway on top of it — Phase 1.1, a full duration-based
+**Status Effect Framework** (see the Battle section above), is done.
+Further items (Skill Upgrades, Equipment Sockets, Daily/Weekly missions,
+growing the Titles/Achievements/Relics/Set rosters, and more) are tracked
+in `EXPANSION_ROADMAP.md`.

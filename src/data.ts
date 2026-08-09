@@ -9,6 +9,21 @@ export const ARCHETYPE_BY_RANK: Record<Rank, Archetype> = {
   E: "goblin", D: "orc", C: "wraith", B: "knight", A: "beast", S: "wyrm"
 };
 
+/** Which status effect (see systems/statusEffects/) each archetype
+ *  carries as its signature - reused in *both* directions: a monster's
+ *  "special" attack can inflict this on the Hunter (Game.enemyTurn), and
+ *  a deployed Shadow of the same archetype has its own independent
+ *  chance to inflict the identical status on an enemy (Game
+ *  .companionStrike) - so "which status shows up" always reads as "that
+ *  monster family's thing," whichever side is dealing it. Picked for
+ *  thematic fit: goblins cut (Bleed), orcs stagger with brute force
+ *  (Weakness), wraiths disrupt focus (Silence), knights break armor
+ *  (Vulnerability), beasts poison with tooth and claw (Poison), wyrms
+ *  breathe fire (Burn). */
+export const ARCHETYPE_STATUS: Record<Archetype, string> = {
+  goblin: "bleed", orc: "weakness", wraith: "silence", knight: "vulnerability", beast: "poison", wyrm: "burn"
+};
+
 /** Six named subspecies per archetype (trash) plus four boss epithets -
  *  index 0 of each is the original "hand-placed" gate's monster/boss name,
  *  kept verbatim; every other gate on that archetype draws a rotated slice

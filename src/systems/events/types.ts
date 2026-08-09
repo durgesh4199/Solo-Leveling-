@@ -1,16 +1,18 @@
-/** A Random Event's actual effect. Deliberately all *instant*, one-shot
+/** A Random Event's actual effect. Originally all *instant*, one-shot
  *  effects (a flat gold/gear/HP change, or one bonus enemy joining the
- *  very next wave) - no temporary buffs/debuffs with a duration, since
- *  that's real infrastructure this system doesn't have yet (combat
- *  status effects are still their own future roadmap item; building a
- *  duration mechanic as a side effect of Random Events would be exactly
- *  the unrelated-system scope creep the standing rules rule out). */
+ *  very next wave) - the doc comment used to note that a temporary
+ *  buff/debuff needed real duration infrastructure this system didn't
+ *  have yet. That infrastructure now exists (systems/statusEffects/, the
+ *  Status Effect Framework), so `"blessing"` is the one non-instant
+ *  effect: it grants the Hunter a random beneficial status rather than
+ *  an immediate stat change. */
 export type RandomEventEffect =
   | { kind: "gold"; baseAmount: number }
   | { kind: "loot" }
   | { kind: "heal"; hpPct: number; mpPct: number }
   | { kind: "ambush" }
-  | { kind: "toll"; hpCostPct: number; baseGoldReward: number };
+  | { kind: "toll"; hpCostPct: number; baseGoldReward: number }
+  | { kind: "blessing" };
 
 export interface RandomEventDef {
   id: string;

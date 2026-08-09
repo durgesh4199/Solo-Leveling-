@@ -25,7 +25,8 @@ export const RANDOM_EVENTS: RandomEventDef[] = [
   { id: "bonus_loot", label: "Hidden Cache", description: "A hidden cache holds a piece of gear.", weight: 2, effect: { kind: "loot" } },
   { id: "healing_spring", label: "Healing Spring", description: "A spring restores some of your HP and MP.", weight: 2, effect: { kind: "heal", hpPct: 0.4, mpPct: 0.4 } },
   { id: "ambush", label: "Ambush!", description: "A hidden foe joins the next fight.", weight: 2, effect: { kind: "ambush" } },
-  { id: "toll", label: "Toll Shrine", description: "A shrine demands blood for gold.", weight: 1.5, effect: { kind: "toll", hpCostPct: 0.15, baseGoldReward: 90 } }
+  { id: "toll", label: "Toll Shrine", description: "A shrine demands blood for gold.", weight: 1.5, effect: { kind: "toll", hpCostPct: 0.15, baseGoldReward: 90 } },
+  { id: "blessing", label: "Ancient Blessing", description: "A dormant ward blesses you with fleeting power.", weight: 2, effect: { kind: "blessing" } }
 ];
 
 function pickWeighted(pool: RandomEventDef[]): RandomEventDef {
