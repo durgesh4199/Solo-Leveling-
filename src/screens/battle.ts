@@ -4,6 +4,7 @@ import { icon } from "../art/icons";
 import { AURA_TIER, PLAYER_RANK_GLOW, enemyPortrait, hunterPortrait, playerAuraHtml, shadowPortrait } from "../art/portraits";
 import { ShaderFX } from "../fx/ShaderFX";
 import { ARCHETYPE_BY_RANK, POTIONS, RARITY_META, SKILLS, SKILL_REGISTRY } from "../data";
+import { towerFloorFromGateId } from "../systems/tower/data";
 import type { EnemyUnit } from "../types";
 
 const VIOLET = "#d2cefd";
@@ -371,7 +372,8 @@ export const battleScreen: ScreenModule = (root, game) => {
       renderedShadowId = "";
     }
 
-    waveProgressEl.textContent = b.isBossWave ? "FINAL WAVE" : `WAVE ${b.waveIndex} / ${b.totalWaves}`;
+    const towerFloor = towerFloorFromGateId(b.gateId);
+    waveProgressEl.textContent = towerFloor !== null ? `FLOOR ${towerFloor}` : b.isBossWave ? "FINAL WAVE" : `WAVE ${b.waveIndex} / ${b.totalWaves}`;
     const currentTarget = b.enemies.find((u) => u.alive);
     // Trash waves can field up to 3 differently-named units at once now, so
     // the header follows whichever one is actually the current target
@@ -509,9 +511,12 @@ export const battleScreen: ScreenModule = (root, game) => {
       itemPanel.style.display = "none";
       resultPanel.style.display = "flex";
       if (b.result === "defeat") {
+        const fellFloor = towerFloorFromGateId(b.gateId);
         resultTitle.textContent = "You Fell";
         resultTitle.style.color = "var(--color-neutral-400)";
-        resultSubtitle.textContent = "Retreat and recover before trying again.";
+        resultSubtitle.textContent = fellFloor !== null
+          ? `Fell on Floor ${fellFloor}. Best floor: ${game.state.tower.highestFloor}.`
+          : "Retreat and recover before trying again.";
         ariseBtn.style.display = "none";
         continueBtn.textContent = "Retreat";
       } else if (b.result === "gate-clear") {
@@ -526,9 +531,16 @@ export const battleScreen: ScreenModule = (root, game) => {
         resultSubtitle.textContent = `Officially recognized as ${game.state.player.rank}-Rank.`;
         // No Arise - the exam's Proctor isn't a monster to command as a
         // Shadow, and ariseShadow() already refuses a non-wave-clear/
-        // gate-clear result regardless.
+        // gate-clear/tower-floor-clear result regardless.
         ariseBtn.style.display = "none";
         continueBtn.textContent = "Continue";
+      } else if (b.result === "tower-floor-clear") {
+        const floor = towerFloorFromGateId(b.gateId) ?? 0;
+        resultTitle.textContent = "Floor Cleared";
+        resultTitle.style.color = "var(--color-accent-300)";
+        resultSubtitle.textContent = `Floor ${floor} conquered - the tower climbs higher.`;
+        ariseBtn.style.display = "inline-flex";
+        continueBtn.textContent = "Next Floor";
       } else {
         resultTitle.textContent = "Wave Cleared";
         resultTitle.style.color = "var(--color-accent-300)";

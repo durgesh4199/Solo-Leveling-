@@ -4,6 +4,7 @@ import { icon } from "../art/icons";
 import { hunterPortrait } from "../art/portraits";
 import { POTIONS, RARITY_META, affixDeltaText, affixText, compareItemAffixes, priceForItem, sellPriceForItem } from "../data";
 import { CRAFT_EQUIPMENT_COST, REFORGE_COST_BY_RARITY } from "../systems/crafting/data";
+import { EQUIPMENT_SETS, EQUIPMENT_SET_REGISTRY, equippedSetCounts } from "../systems/sets/data";
 import type { ItemRarity, ItemSlot, LootItem } from "../types";
 
 const SLOT_LABEL: Record<ItemSlot, string> = {
@@ -68,6 +69,42 @@ function comparisonHtml(item: LootItem, equipped: LootItem | undefined, slotLabe
     </div>`;
 }
 
+/** Equipment Set progress (#16) - every set in the roster always shows,
+ *  the same "locked but not hidden" convention Titles/Relics already use,
+ *  so a player who's never found a single piece still knows the sets
+ *  exist and what each piece is called (worth watching for while
+ *  playing). Thresholds are cumulative (see SetThreshold's own doc
+ *  comment) - a checkmark per tier already met, not just the highest. */
+function drawSetBonuses(p: Game["state"]["player"]): string {
+  const counts = equippedSetCounts(p.equipment);
+  const cards = EQUIPMENT_SETS.map((set) => {
+    const count = counts[set.id] ?? 0;
+    const pieceNames = Object.values(set.pieces).map((piece) => piece.name).join(" · ");
+    const thresholdRows = set.thresholds.map((t) => {
+      const active = count >= t.count;
+      return `<div style="display:flex;align-items:center;gap:6px;font-size:11px;color:${active ? "var(--color-accent-300)" : "var(--color-neutral-600)"};">
+        ${icon(active ? "check-circle" : "circle-dashed")} ${t.count}pc: ${t.bonusText}
+      </div>`;
+    }).join("");
+    return `
+      <div style="padding:var(--space-3);border:1px solid ${count > 0 ? "var(--color-accent-700)" : "var(--color-neutral-800)"};border-radius:var(--radius-md);${count > 0 ? "" : "opacity:0.75;"}">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <div style="font-size:13px;font-weight:500;">${set.name}</div>
+          <span class="tag tag-outline" style="font-size:10px;flex-shrink:0;">${count} / 6</span>
+        </div>
+        <div style="font-size:11px;color:var(--color-neutral-500);margin-top:2px;">${set.description}</div>
+        <div style="font-size:10px;color:var(--color-neutral-600);margin-top:4px;">${pieceNames}</div>
+        <div style="display:flex;flex-direction:column;gap:2px;margin-top:6px;">${thresholdRows}</div>
+      </div>`;
+  }).join("");
+
+  return `
+    <div>
+      <h5 style="margin-bottom:var(--space-2);color:var(--color-neutral-400);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Equipment Sets</h5>
+      <div style="display:flex;flex-direction:column;gap:var(--space-2);">${cards}</div>
+    </div>`;
+}
+
 function formatCountdown(ms: number): string {
   const totalSec = Math.ceil(ms / 1000);
   const m = Math.floor(totalSec / 60);
@@ -109,8 +146,12 @@ export const inventoryScreen: ScreenModule = (root, game) => {
           </div>`;
       }
       const meta = RARITY_META[item.rarity];
+      const setBadge = item.setId
+        ? `<span style="position:absolute;top:2px;right:4px;font-size:8px;font-weight:700;letter-spacing:0.04em;color:#f0a340;" title="${EQUIPMENT_SET_REGISTRY.get(item.setId)?.name ?? "Set piece"}">SET</span>`
+        : "";
       return `
         <div class="paperdoll-slot filled" style="${pos}border-color:${meta.color};box-shadow:0 0 0 1px ${meta.color} inset, 0 0 14px 1px color-mix(in srgb, ${meta.color} 35%, transparent);" data-action="unequip-item" data-slot="${slot}" title="${item.name} — ${affixSummary(item)} — click to unequip">
+            ${setBadge}
             <span class="slot-icon" style="color:${meta.color};">${icon(item.icon as any)}</span>
             <span class="slot-label" style="color:${meta.color};">${affixText(item.affixes[0])}</span>
           </div>`;
@@ -178,6 +219,7 @@ export const inventoryScreen: ScreenModule = (root, game) => {
           ${paperdollSlots}
         </div>
       </div>
+      ${drawSetBonuses(p)}
       <div>
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-2);">
           <h5 style="margin:0;color:var(--color-neutral-400);font-size:12px;text-transform:uppercase;letter-spacing:0.06em;">Bag (${game.state.bag.length})</h5>

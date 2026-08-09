@@ -457,16 +457,18 @@ pulses gold whenever it increases).
 - **Additive stacking across systems, not just within one**: every site
   that already read an equipped Title's percentage bonus
   (`effectiveStat`, `critChance`, `grantXp`, `grantKillRewards`) now
-  computes `titlePct + talentPct + relicPct` as one combined number
-  *before* applying a single `value *= 1 + pct`, instead of multiplying
-  three times. Nested multiplies would silently compound (1.03 x 1.03 x
-  1.03 = 9.27% effective, not a flat 9%) - small at these magnitudes, but
-  exactly the kind of drift the "no multiplier chains" guardrail exists to
-  prevent, and it compounds for real as more percentage-granting systems
-  land (Equipment Sets, Prestige - still pending; Relics joined this
-  pipeline at #15; #9 Hunter Classes shipped without needing this - see
-  below, its bonuses each target one specific formula rather than this
-  shared pipeline).
+  computes `titlePct + talentPct + relicPct + setPct` as one combined
+  number *before* applying a single `value *= 1 + pct`, instead of
+  multiplying four times (`effectiveStat` alone also adds a fifth,
+  `prestigeAllStatsPct` - see the Prestige section below for why that one
+  stops at `effectiveStat` and doesn't touch the other three sites).
+  Nested multiplies would silently compound (1.03 x 1.03 x 1.03 = 9.27%
+  effective, not a flat 9%) - small at these magnitudes, but exactly the
+  kind of drift the "no multiplier chains" guardrail exists to prevent.
+  Relics joined this pipeline at #15, Equipment Sets at #16, Prestige
+  (effectiveStat only) at #20; #9 Hunter Classes shipped without needing
+  this - see below, its bonuses each target one specific formula rather
+  than this shared pipeline.
   **Any future system adding its own percentage bonus to one of these
   four sites must fold into the same combined `pct` before the single
   multiply, not bolt on a second multiply.**
@@ -902,6 +904,178 @@ pulses gold whenever it increases).
   the slice legitimately defaults to owning none rather than needing a
   backfilled amount.
 
+## Equipment Sets (Phase 5 item #16 of EXPANSION_ROADMAP.md)
+
+- **New module, `src/systems/sets/`** - `types.ts` (`SetBonus` - the same
+  5-kind shape TitleBonus/TalentBonus/RelicBonus already use, `SetThreshold`,
+  `SetPieceDef`, `EquipmentSetDef`); `data.ts` holds the 3-set `EQUIPMENT_
+  SETS` roster, `EQUIPMENT_SET_REGISTRY`, `SET_DROP_CHANCE`,
+  `rollSetPieceDrop`, `equippedSetCounts`, and the four `set*Pct` sum
+  helpers.
+- **One new field, `LootItem.setId?: string`** (`types.ts`) - the *only*
+  schema change this item needed. Undefined-safe everywhere it's read
+  (`equippedSetCounts` just skips anything without one), so unlike every
+  other item shipped since #14, this one needed **zero** save-migration
+  code and **zero** new top-level `GameState` slice - a set piece is a
+  plain `LootItem` living in the Bag/`player.equipment` exactly like any
+  other, not a separately-tracked collection.
+- **What makes a Set piece different from a Relic** (both RNG boss
+  drops): a Relic is a wholly separate accessory dimension (its own
+  slots, never competing with the 6 core gear slots); a Set piece *is*
+  ordinary gear - it occupies a real paperdoll slot and directly competes
+  with the best individually-rolled item for that slot. That's the
+  design tension a Set exists to create.
+- **`generateSetPiece(rank, slot, name, affixKeys, icon, setId)`** lives
+  in `data.ts` itself (not `systems/sets/`) because it needs `RANK_INDEX`/
+  `rollAffixValue`, both private to that file - reusing them instead of a
+  second, independently-tuned formula means a set piece's numeric power
+  scales with rank exactly the same way normal loot's does, even though
+  its *affix keys* are fixed by the `SetPieceDef` rather than randomly
+  chosen from `AFFIX_POOL`. Always rolls at `RARITY_META.legendary
+  .statMult`, regardless of what rarity a plain roll might have hit.
+- **Threshold bonuses are cumulative** (`activeBonuses` in
+  `systems/sets/data.ts` iterates *every* threshold whose `count` is met,
+  not just the highest) - 2pc and 4pc are both active at 4 pieces worn,
+  not replaced by the 4pc tier.
+- **`Game.rollSetPieceDropOnBossClear(rank)`** is called from
+  `onWaveCleared`'s real-Gate-boss-clear branch, right alongside (not
+  instead of) `rollRelicDropOnBossClear()` - independent rolls, no shared
+  state, so both *can* fire off the same boss kill (and did, in testing -
+  see the note in the Relics test about isolating the two with a call-
+  counting `Math.random` mock once a second single-slot-toast producer
+  existed to race against the first).
+- **`drawSetBonuses`** (screens/inventory.ts, new block between the
+  paperdoll and the Bag on the Gear sub-tab) - a one-shot render (redrawn
+  whenever `drawGear` itself redraws, no separate update() wiring needed)
+  listing all 3 sets always, each with its 6 piece names and every
+  threshold's active/inactive state - the same "locked but not hidden"
+  convention Titles/Relics already use. A small "SET" badge on a
+  paperdoll slot marks a set-tagged item at a glance.
+
+## Infinite Tower (Phase 6 item #17 of EXPANSION_ROADMAP.md)
+
+- **New module, `src/systems/tower/`** - `towerGateId`/
+  `towerFloorFromGateId` (id <-> floor number, the one place that parsing
+  logic lives), `towerFloorGate(floor)` (synthesizes a `GateDef` on
+  demand), `TOWER_MILESTONE_INTERVAL`/`towerMilestoneGold`. No `types.ts` -
+  `TowerState` lives in root `types.ts` next to `RelicState`/`TalentState`,
+  same precedent as every other top-level state slice's home.
+- **Reuses the whole battle engine unchanged**, the same way Promotion
+  Exams (#10) already prove out: a Tower floor is just a `GateDef` with
+  `isTowerFloor: true`. `totalEnemiesForGate` collapses it to a solo boss
+  (same line that already handles `isPromotionExam`), so `makeEnemies`/
+  `buildWavePlan`/crit/loot/Dungeon-Modifiers/Random-Events all work with
+  zero special-casing inside the battle engine itself.
+- **Why Tower floors are never in `GATE_REGISTRY`**: that registry is
+  explicitly documented (`services/registry.ts`) as "only for content
+  fixed at build time". There's no upper bound on how high a floor number
+  can go, so a Tower floor's `GateDef` is synthesized fresh every time
+  it's needed instead.
+- **`Game.resolveGate(gateId)`** is the one piece of new plumbing every
+  other Tower integration point hangs off: checks `GATE_REGISTRY.get`
+  first, falls back to `towerFloorGate(towerFloorFromGateId(gateId))`
+  only if that parses as a Tower id. Every internal call site that used
+  to read a live battle's `gateId` straight from `GATE_REGISTRY`
+  (`advanceWave`, `grantKillRewards`, `onWaveCleared`, the public
+  `getGate`) now calls this instead - a mechanical swap that changes
+  nothing for a non-Tower battle, verified by the full pre-existing #11-
+  #15 test suites re-running clean.
+- **`startPromotionExam`'s own `GATE_REGISTRY.get(gateId)` call is
+  deliberately left untouched** - it's resolving a *specific exam gate to
+  start a battle with* (by rank), not re-resolving a *live battle's*
+  gateId, so it was never one of the sites that needed to become Tower-
+  aware.
+- **Stats grow linearly, not exponentially** (`towerFloorGate`) - 3.5% of
+  the floor-1 baseline per floor. Deliberately not exponential: this
+  guarantees the numbers stay well-behaved (no overflow, no display
+  weirdness) at arbitrarily high floor counts without ever needing a
+  coded ceiling, while still genuinely never plateauing.
+- **`Game.completeTowerFloor`** is `onWaveCleared`'s third early-return
+  branch (after the exam check, before the ordinary `isBossWave` gate-
+  clear branch) - updates `tower.highestFloor` (only if the new floor is
+  higher), pays milestone gold every `TOWER_MILESTONE_INTERVAL` floors,
+  and sets `result: "tower-floor-clear"`. Deliberately does **not** touch
+  `gatesCleared` or roll a Relic/Set-piece drop - those are real Gates'
+  own reward identity, and branching off before that code runs (the same
+  pattern the exam branch already uses) keeps the two modes' rewards
+  cleanly separate without an explicit `if (!isTowerFloor)` guard on
+  every one of those call sites.
+- **`Game.advanceTowerFloor`** (private) is Tower's counterpart to
+  `advanceWave`, but builds an entirely fresh `BattleState` rather than
+  spreading the old one - each floor is its own freshly synthesized
+  `GateDef`, not the next entry in the *same* gate's wave plan the way
+  `advanceWave` assumes. Deliberately never resets `player.hp`/`.mp` (only
+  `startBattle`'s fresh-gate-entry path does that), so they carry floor-
+  to-floor exactly like they already carry wave-to-wave within a Gate.
+  Rolls its own fresh Dungeon Modifier and Random Event every floor
+  (unlike a Gate, where one modifier and no Random Event on the first
+  wave cover the whole run) - each floor reads as its own room.
+- **Three-way routing added to `continueAfterWave`** (`wave-clear` ->
+  `advanceWave`, `tower-floor-clear` -> `advanceTowerFloor`, everything
+  else -> `retreatBattle`) and **`ariseShadow`'s result-gate widened** to
+  accept `tower-floor-clear` alongside `wave-clear`/`gate-clear`, with a
+  three-way `setTimeout` continuation matching `continueAfterWave`'s
+  shape. **`retreatBattle` is now screen-aware**: parses the outgoing
+  battle's `gateId` to land on `"tower"` after a Tower battle, `"gates"`
+  otherwise, instead of always assuming Gates.
+- **New Tower screen/tab** (`screens/tower.ts`, a `simpleScreen` lobby -
+  no per-frame state, just `game.state.tower.highestFloor` and a "Begin
+  Climb"/"Climb Again" button) plus Tower-aware text on the Battle screen
+  (`waveProgressEl` shows `FLOOR N` instead of `WAVE X/Y`/`FINAL WAVE`
+  whenever `towerFloorFromGateId(b.gateId)` isn't null; the result panel
+  gained a `tower-floor-clear` branch with "Next Floor"; the `defeat`
+  branch now reports which floor was reached and the current best when
+  the battle was a Tower one).
+
+## Prestige/Reawakening (Phase 7 item #20 of EXPANSION_ROADMAP.md)
+
+- **New module, `src/systems/prestige/data.ts`** - `REAWAKEN_MIN_LEVEL`
+  (30), `reawakenShardsFor(powerScore)`, `PRESTIGE_PCT_PER_SHARD` (0.4%),
+  `prestigeAllStatsPct(shardsBanked)`. No `types.ts` - `PrestigeState`
+  lives in root `types.ts`, same precedent as every other top-level slice.
+- **Eligibility is confirmed S-Rank (`PlayerState.rank`, not level-
+  implied) at `REAWAKEN_MIN_LEVEL`+** - `Game.reawakenEligible()` is the
+  single source of truth both the UI's button-disable and `Game.reawaken
+  ()`'s own internal backstop check read, so they can never disagree
+  about whether a Reawakening is currently allowed.
+- **`Game.reawaken()` is a deliberately *partial* wipe** - much narrower
+  than `startNewHunter()`'s complete `structuredClone(INITIAL_STATE)`.
+  Explicitly resets: player stats/gold/gear/rank/hunterClass/
+  shadowEssence (name kept via `{ ...freshPlayer, name: ... }`),
+  `gatesCleared`, `shadowArmy`, `bag`, Shop stock, Talent points/unlocks.
+  Explicitly untouched (kept): `progress`, **both** `relics.ownedIds` and
+  `.equippedIds`, `tower.highestFloor`, and `prestige` itself (which only
+  grows). This is the one save-slice reset shape in the whole codebase
+  that's neither "reset everything" (`startNewHunter`) nor "reset
+  nothing" - explicit, hand-picked field-by-field, precisely because a
+  Reawakening's whole *point* is that some things carry over and some
+  don't.
+- **Monarch Shards derive from `Game.powerScore`**, read *before* the
+  reset happens (single synchronous statement ordering - `const shards =
+  reawakenShardsFor(this.powerScore)` runs before `this.state = {...}`
+  reassigns it) - Power Score already folds in level/stats/gear/Shadows/
+  Relics/Sets, so shard payout reflects everything the Hunter had built,
+  not a second narrower formula that could miss a system.
+- **Prestige is the sixth system into the shared pct pipeline, but
+  deliberately the first to touch only one of the four sites**
+  (`effectiveStat`) - Hunter Class (#9) already established the "not
+  every percentage bonus needs to touch the shared 4-site pipeline"
+  precedent, and the balancing guardrail's own wording ("stacked on the
+  existing effectiveStat pipeline") names that one site specifically, so
+  Prestige doesn't add unnecessary surface to `critChance`/`grantXp`/
+  `grantKillRewards` just for uniformity's sake.
+- **No hard cap on shard accumulation** - Reawakening itself is the
+  natural rate-limiter (a full climb back to Level 30+ S-Rank every
+  single time), so `PRESTIGE_PCT_PER_SHARD` staying small and uncapped
+  can't runaway within any realistic play session.
+- **New Prestige sub-tab on Status** (`renderPrestige`, nested in
+  `statsScreen`'s closure like `renderClass` - it needs `reawakenConfirming`
+  state across redraws) - the Reawaken button goes through the same
+  Cancel/Confirm gate Merge/Evolve/Disenchant/Class already use, plus an
+  explicit plain-language reset/keep breakdown, since unlike those
+  actions "what carries over" genuinely isn't guessable without reading
+  the code.
+
 ## Player aura (visual, not mechanical)
 
 `PLAYER_RANK_GLOW` (portraits.ts) is a dedicated violet "chosen one" color
@@ -978,10 +1152,12 @@ Arise, level-up, dissolve).
   Collection ✅ → Shadow Evolution ✅ → Shadow Management UI ✅ → Talent
   Tree ✅ → Hunter Classes ✅ → Promotion Exams ✅ → Dungeon Modifiers ✅ →
   Random Events ✅ → Better Enemy AI ✅ → Crafting ✅ → Relics ✅ → Equipment
-  Sets → Infinite Tower → Achievements ✅ → Titles ✅ → Prestige. Always
-  check that file for current status before starting any expansion work -
-  **do not start the next item without an explicit go-ahead**, and do
-  not reorder or batch items.
+  Sets ✅ → Infinite Tower ✅ → Achievements ✅ → Titles ✅ → Prestige ✅. All
+  20 items are now done. Always check `EXPANSION_ROADMAP.md` for current
+  status before starting any further expansion work - the "wait for an
+  explicit go-ahead, don't reorder or batch items" rule still applies to
+  whatever comes after this fixed list (growing existing rosters, real
+  art, sound, etc.).
 
 ## Workflow notes for whoever picks this up next
 

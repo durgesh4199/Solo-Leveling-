@@ -6,7 +6,7 @@ export type Rank = "E" | "D" | "C" | "B" | "A" | "S";
  *  at a glance even across dozens of differently-named species. */
 export type Archetype = "goblin" | "orc" | "wraith" | "knight" | "beast" | "wyrm";
 
-export type Screen = "title" | "gates" | "battle" | "stats" | "shadows" | "inventory";
+export type Screen = "title" | "gates" | "battle" | "stats" | "shadows" | "inventory" | "tower";
 
 export type StatKey = "str" | "agi" | "int" | "vit" | "per";
 
@@ -87,6 +87,17 @@ export interface GateDef {
    *  a boss kill through `Game.completePromotionExam` instead of the
    *  normal gate-clear path. Absent/false for every explorable gate. */
   isPromotionExam?: boolean;
+  /** Marks a synthesized Infinite Tower floor (#17, systems/tower/) rather
+   *  than a fixed-content gate - unlike isPromotionExam's 5 entries
+   *  sitting in EXAM_GATES_DATA, there's no fixed table of these (there's
+   *  no upper bound on how high a floor number goes), so a Tower floor's
+   *  GateDef is built on demand (towerFloorGate) and never registered in
+   *  GATE_REGISTRY - see Game.resolveGate. Also collapses
+   *  `totalEnemiesForGate` to a solo boss fight, same as isPromotionExam,
+   *  and routes a boss kill through `Game.completeTowerFloor` instead of
+   *  the normal gate-clear path. Absent/false for every explorable gate
+   *  and every Promotion Exam. */
+  isTowerFloor?: boolean;
 }
 
 export interface WavePlanEntry {
@@ -122,6 +133,14 @@ export interface LootItem {
   /** 1 (common/uncommon) to 4 (godly) rolls, each a different affix key. */
   affixes: ItemAffix[];
   icon: string;
+  /** Which EquipmentSetDef (#16, systems/sets/) this item belongs to, or
+   *  undefined for ordinary loot - the overwhelming majority of items.
+   *  Undefined-safe everywhere it's read (equippedSetCounts simply skips
+   *  anything without one), so old saves predating this item need no
+   *  migration at all - the same "genuinely falsy-safe" shape
+   *  `PlayerState.hunterClass: null` already established, not the
+   *  explicit-backfill shape `shadowEssence`/`relics` needed. */
+  setId?: string;
 }
 
 export interface ShadowRecord {
@@ -259,7 +278,7 @@ export interface BattleToast {
   rarity?: ItemRarity;
 }
 
-export type BattleResult = "wave-clear" | "gate-clear" | "defeat" | "exam-pass" | null;
+export type BattleResult = "wave-clear" | "gate-clear" | "defeat" | "exam-pass" | "tower-floor-clear" | null;
 
 export interface BattleState {
   gateId: string;
@@ -345,6 +364,33 @@ export interface RelicState {
   equippedIds: string[];
 }
 
+/** Infinite Tower progress (#17, src/systems/tower/) - a single permanent
+ *  record, not a resumable in-progress climb: every attempt starts fresh
+ *  at floor 1 (see Game.startTowerFloor), climbing as far as possible in
+ *  one continuous run with HP/MP carrying floor-to-floor the same way
+ *  they carry wave-to-wave within a Gate; a defeat ends that run but
+ *  never lowers this record. There is no "currentFloor" here on purpose -
+ *  an in-progress climb lives entirely in `BattleState.gateId` (parsed
+ *  via towerFloorFromGateId) the same way an in-progress Gate run isn't
+ *  separately tracked outside `battle` either, and a save never resumes
+ *  mid-battle regardless (see SavedGameState's own doc comment). */
+export interface TowerState {
+  highestFloor: number;
+}
+
+/** Prestige/Reawakening (#20, item 20 of the fixed roadmap) - `Game.reawaken`
+ *  resets a Hunter back to Level 1 (see its own doc comment for exactly
+ *  what carries over) in exchange for Monarch Shards, banked here
+ *  permanently and never spent - `shardsBanked` directly grants a small,
+ *  uncapped `allStatsPct` bonus (see systems/prestige/data.ts), so a
+ *  completed Reawakening makes every future run start measurably
+ *  stronger. `reawakeningCount` is a pure display/milestone counter, not
+ *  itself consulted by any formula. */
+export interface PrestigeState {
+  reawakeningCount: number;
+  shardsBanked: number;
+}
+
 /** A brief, app-wide notification (achievement/title unlock, etc.) that
  *  isn't tied to being inside a battle - battle already has its own toast
  *  on BattleState for in-run messages. Rendered by the app shell
@@ -352,7 +398,7 @@ export interface RelicState {
 export interface GlobalToast {
   id: number;
   text: string;
-  kind: "achievement" | "title" | "info" | "shadow" | "promotion" | "event" | "relic";
+  kind: "achievement" | "title" | "info" | "shadow" | "promotion" | "event" | "relic" | "set" | "tower" | "prestige";
 }
 
 export interface GameState {
@@ -372,5 +418,7 @@ export interface GameState {
   progress: ProgressState;
   talents: TalentState;
   relics: RelicState;
+  tower: TowerState;
+  prestige: PrestigeState;
   globalToast?: GlobalToast | null;
 }

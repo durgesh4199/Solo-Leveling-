@@ -8,6 +8,7 @@ import { battleScreen } from "./battle";
 import { statsScreen } from "./stats";
 import { shadowsScreen } from "./shadows";
 import { inventoryScreen } from "./inventory";
+import { towerScreen } from "./tower";
 
 const SCREENS: Record<Screen, ScreenModule> = {
   title: titleScreen,
@@ -15,11 +16,13 @@ const SCREENS: Record<Screen, ScreenModule> = {
   battle: battleScreen,
   stats: statsScreen,
   shadows: shadowsScreen,
-  inventory: inventoryScreen
+  inventory: inventoryScreen,
+  tower: towerScreen
 };
 
 const TABS: { screen: Screen; label: string; iconName: Parameters<typeof icon>[0] }[] = [
   { screen: "gates", label: "GATES", iconName: "door-open" },
+  { screen: "tower", label: "TOWER", iconName: "skull" },
   { screen: "stats", label: "STATUS", iconName: "chart-bar" },
   { screen: "shadows", label: "SHADOWS", iconName: "ghost" },
   { screen: "inventory", label: "ITEMS", iconName: "bag" }

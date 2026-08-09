@@ -53,6 +53,14 @@ engine, no external art/font dependencies — built to run on:
   right before a boss wave), or a **Toll Shrine** (a small HP cost for a
   bigger gold payout than a plain Gold Cache - never enough to end a run
   on its own)
+- **Infinite Tower** — a new **Tower** tab: a single, endless column of
+  boss-only floors, no trash, no fixed end. Every climb starts fresh at
+  Floor 1 and pushes as high as one continuous run can carry it - HP/MP
+  carry floor to floor exactly like they already carry wave to wave
+  within a Gate, and every floor rolls its own fresh Dungeon Modifier and
+  a shot at a Random Event, so no two floors play identically. A fall
+  ends the run but never lowers your **Highest Floor** record; every 10th
+  floor pays a bonus gold milestone on top of its normal reward
 - **Battle** — turn-based, auto-targeting the frontmost living enemy
   (underlined): **Attack**, **Skills** (see below), **Guard** (blocks for a
   random 1-3 rounds, halving incoming damage each round it's up - but
@@ -163,6 +171,16 @@ engine, no external art/font dependencies — built to run on:
   one grants a small percentage bonus (a stat, Crit, XP, or Gold) that
   stacks additively alongside your Title and Talents - three independent
   systems all feeding the same formulas without compounding
+- **Prestige / Reawakening** — a Prestige sub-tab on Status: once you're a
+  confirmed S-Rank Hunter at Level 30+, **Reawaken** - a full reset back
+  to Level 1 (stats, gear, gold, Shadows, Talents, Gate progress) in
+  exchange for **Monarch Shards**, banked forever and never spent, each
+  worth a small permanent All Stats bonus that applies to every run from
+  then on. Your Titles, Achievements, Relics, and Tower record all carry
+  through untouched - only the current run resets, not everything you've
+  earned. A tap-to-confirm gate (like every other irreversible choice in
+  the game) spells out exactly what resets vs. what's kept before you
+  commit
 - **Equipment** — 6 slots (Weapon, Helmet, Body Armor, Legs, Ring, Amulet),
   each item rolling 1-4 random affixes depending on rarity: the five core
   stats (folds into effectiveStat, same as a stat point), direct flat
@@ -173,6 +191,15 @@ engine, no external art/font dependencies — built to run on:
   restored every round), and **Fire Damage** (flat bonus damage on every
   hit). A VIT/INT affix converts to HP/MP at the exact same rate a spent
   stat point does, so the two systems never feel inconsistent
+- **Equipment Sets** — 3 named sets (Vanguard's Warplate, Warden's
+  Bulwark, Nightstalker's Guise), 6 pieces each covering every gear slot,
+  always legendary rarity. Unlike a Relic (its own separate slot), a set
+  piece *is* ordinary gear - it drops into the same paperdoll slots and
+  competes directly with your best individually-rolled item there.
+  Wearing 2/4/6 pieces of the same set unlocks cumulative threshold
+  bonuses (a stat, Crit, XP, or Gold), shown live on Inventory's Gear
+  tab. Independently rolled off the same Gate-boss-clear moment a Relic
+  can drop from, at its own separate odds
 - **Rarity** — 7 tiers, common up to godly (common → uncommon → rare →
   epic → legendary → mythic → godly), each both rarer and a bigger
   multiplier on every affix it rolls than the last. Base odds off a plain
@@ -184,8 +211,10 @@ engine, no external art/font dependencies — built to run on:
 - **Inventory** — four sub-tabs, each its own menu: **Gear** (a paperdoll
   equipment grid - Amulet/Helmet across the top with Weapon and Ring
   flanking the Hunter, Body Armor and Legs stacked below, connected by
-  pathway lines, plus the loot bag with compact slot/rarity filter
-  dropdowns and a Default/Rarity/Value/Newest sort), **Shop** (spend gold
+  pathway lines, plus an **Equipment Sets** panel showing every set's
+  piece names and live 2/4/6-piece threshold progress, plus the loot bag
+  with compact slot/rarity filter dropdowns and a Default/Rarity/Value/
+  Newest sort), **Shop** (spend gold
   on procedurally-rolled equipable gear; restocks itself for free every 10
   real minutes, or pay to reroll early - both reset the same countdown,
   shown live on the tab), **Craft** (spend Shadow Essence + gold on
@@ -201,17 +230,17 @@ engine, no external art/font dependencies — built to run on:
   buttons) expands a **comparison** against whatever's equipped in that
   slot - exactly which stats go up, which go down, right there before you
   commit to equipping or buying
-- **Status** — six sub-tabs. **Status** (unchanged): hovering a stat's
+- **Status** — seven sub-tabs. **Status** (unchanged): hovering a stat's
   `+` previews exactly what that point would buy ("+5 Max HP", "+0.3% Crit
   · -1% Guard Miss", ...) before you commit to it, then floats the same
   confirmation off the row once you do. **Class** and **Talents**: see
-  Hunter Class/Talent Tree above. **Relics**: see Relics above. **Titles**:
-  milestone-gated passive bonuses (kill counts per monster family, Shadow
-  collection size, Gates cleared, boss kills, rank reached) - locked ones
-  show live progress toward them, one can be equipped at a time.
-  **Achievements**: a starter roster of 28 spanning every progression axis
-  in the game, each granting gold or stat points the instant it's met, no
-  separate claim
+  Hunter Class/Talent Tree above. **Relics**: see Relics above.
+  **Prestige**: see Prestige/Reawakening above. **Titles**: milestone-gated
+  passive bonuses (kill counts per monster family, Shadow collection size,
+  Gates cleared, boss kills, rank reached) - locked ones show live
+  progress toward them, one can be equipped at a time. **Achievements**: a
+  starter roster of 28 spanning every progression axis in the game, each
+  granting gold or stat points the instant it's met, no separate claim
   step
 - **Progress persists** — autosaves (debounced, at most once every 3s,
   plus a final flush on tab close) to a versioned localStorage save. The
@@ -361,10 +390,12 @@ download the results from the workflow run's **Artifacts** section:
   `ART_ASSETS.md` for the exact file list to supply)
 - Sound design (hit/level-up/gate-clear/Arise stingers)
 
-Long-term content roadmap (Equipment Sets, an Infinite Tower, Daily/Weekly
-missions, Prestige, combat status effects, and more) lives in
-**`EXPANSION_ROADMAP.md`**, phased so each stays a real, working system
-rather than a stub — Titles, Achievements, Shadow Evolution, the Talent
-Tree, Hunter Classes, Promotion Exams, Dungeon Modifiers, Random Events,
-Better Enemy AI, Crafting, and Relics above are already ahead of/within
-that plan.
+The fixed 20-item content roadmap in **`EXPANSION_ROADMAP.md`** (Save/
+Load through Prestige/Reawakening, phased so each stays a real, working
+system rather than a stub) is now complete — Equipment Sets, the
+Infinite Tower, and Prestige/Reawakening below join Titles, Achievements,
+Shadow Evolution, the Talent Tree, Hunter Classes, Promotion Exams,
+Dungeon Modifiers, Random Events, Better Enemy AI, Crafting, and Relics.
+Further growth (Daily/Weekly missions, combat status effects, growing the
+Titles/Achievements/Relics/Set rosters, and more) lives in that same file
+as unplanned future work, not a numbered next item.

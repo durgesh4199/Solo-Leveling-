@@ -17,6 +17,9 @@ import { RANDOM_EVENT_RANK_MULT, rollRandomEvent } from "./systems/events/data";
 import type { RandomEventDef } from "./systems/events/types";
 import { CRAFT_EQUIPMENT_COST, CRAFT_RARITY_BONUS, REFORGE_COST_BY_RARITY, essenceFromShadow } from "./systems/crafting/data";
 import { RELIC_DROP_CHANCE, RELIC_SLOT_COUNT, relicCritFlat, relicGoldPct, relicStatPct, relicXpPct, rollRelicDrop } from "./systems/relics/data";
+import { SET_DROP_CHANCE, rollSetPieceDrop, setCritFlat, setGoldPct, setStatPct, setXpPct } from "./systems/sets/data";
+import { TOWER_MILESTONE_INTERVAL, towerFloorFromGateId, towerFloorGate, towerMilestoneGold } from "./systems/tower/data";
+import { REAWAKEN_MIN_LEVEL, prestigeAllStatsPct, reawakenShardsFor } from "./systems/prestige/data";
 
 /** Events the shader/particle FX layer cares about, separate from the
  *  CSS-driven battle state flags (which the DOM screens read directly).
@@ -55,6 +58,8 @@ const INITIAL_STATE: GameState = {
   progress: { counters: {}, unlockedTitleIds: [], equippedTitleId: null, unlockedAchievementIds: [] },
   talents: { points: 0, unlockedIds: [] },
   relics: { ownedIds: [], equippedIds: [] },
+  tower: { highestFloor: 0 },
+  prestige: { reawakeningCount: 0, shardsBanked: 0 },
   globalToast: null
 };
 
@@ -142,10 +147,12 @@ export class Game {
 
   /** Base stat + whatever's equipped anywhere rolled a matching affix,
    *  then the equipped Title's percentage bonus, every unlocked Talent's
-   *  percentage bonus (#8), and every equipped Relic's percentage bonus
-   *  (#15) - combined into *one* percentage and applied as a single
-   *  multiply, not several nested multiplies, so small bonuses stack
-   *  additively (title 3% + talent 3% + relic 3% = 9%) instead of quietly
+   *  percentage bonus (#8), every equipped Relic's percentage bonus
+   *  (#15), every worn Equipment Set threshold's percentage bonus (#16),
+   *  and Prestige's permanent per-Monarch-Shard bonus (#20) - combined
+   *  into *one* percentage and applied as a single multiply, not several
+   *  nested multiplies, so small bonuses stack additively (title 3% +
+   *  talent 3% + relic 3% + ... = a flat sum) instead of quietly
    *  compounding - the "no multiplier chains" guardrail in
    *  EXPANSION_ROADMAP.md applies just as much between systems as within
    *  one. Public - the battle UI reads this too, for the combat-details
@@ -167,6 +174,8 @@ export class Game {
     }
     pct += talentStatPct(this.state.talents.unlockedIds, key);
     pct += relicStatPct(this.state.relics.equippedIds, key);
+    pct += setStatPct(p.equipment, key);
+    pct += prestigeAllStatsPct(this.state.prestige.shardsBanked);
     if (pct > 0) value *= 1 + pct;
     return value;
   }
@@ -214,7 +223,8 @@ export class Game {
     const titleCrit = title?.bonus.kind === "critFlat" ? title.bonus.value : 0;
     const talentCrit = talentCritFlat(this.state.talents.unlockedIds);
     const relicCrit = relicCritFlat(this.state.relics.equippedIds);
-    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit + talentCrit + relicCrit);
+    const setCrit = setCritFlat(this.state.player.equipment);
+    return Math.min(0.65, 0.08 + this.effectiveStat("agi") * STAT_TUNING.agiCritPerPoint + this.effectiveStat("per") * STAT_TUNING.perCritPerPoint + equipmentCrit + titleCrit + talentCrit + relicCrit + setCrit);
   }
 
   private rollCrit(): boolean {
@@ -305,6 +315,13 @@ export class Game {
       // shape as talents' own unlockedIds/unlockedTitleIds arrays already
       // have on an even older save.
       relics: saved.relics ?? { ownedIds: [], equippedIds: [] },
+      // Older saves predate the Infinite Tower (#17) and Prestige (#20) -
+      // both brand-new top-level slices with a genuinely empty starting
+      // state (no floor ever climbed, no Reawakening ever done), the same
+      // "safe empty default, no catch-up needed" shape relics' own
+      // migration above uses.
+      tower: saved.tower ?? { highestFloor: 0 },
+      prestige: saved.prestige ?? { reawakeningCount: 0, shardsBanked: 0 },
       screen: "gates",
       battle: null
     };
@@ -322,6 +339,58 @@ export class Game {
     this.notify();
   }
 
+  /** Item #20 of the fixed roadmap. Confirmed S-Rank (#10) at
+   *  REAWAKEN_MIN_LEVEL+ - by that point a Hunter has realistically
+   *  exhausted what the current content ceiling offers, which is the
+   *  whole point of a Reawakening existing at all. Public so the UI can
+   *  gate the button on it without duplicating the rule. */
+  reawakenEligible(): boolean {
+    return this.state.player.rank === "S" && this.state.player.level >= REAWAKEN_MIN_LEVEL;
+  }
+
+  /** Resets the Hunter back to Level 1 - a *partial* wipe, deliberately
+   *  much narrower than `startNewHunter`'s complete one:
+   *
+   *  Reset: player (stats/gold/gear/rank/hunterClass/shadowEssence, name
+   *  kept), gatesCleared, shadowArmy, bag, Shop stock, Talent points and
+   *  unlocked nodes.
+   *
+   *  Kept: `progress` (Titles/Achievements/lifetime counters - already
+   *  treated as permanent everywhere else in the game), `relics` (both
+   *  owned *and* equipped - found Relics are rare, hard-won, and keeping
+   *  them is a real, deliberate reward for Reawakening rather than just
+   *  another reset), `tower.highestFloor` (a permanent record already),
+   *  and of course `prestige` itself, which this method only ever grows.
+   *
+   *  Returns false (no mutation at all) if `reawakenEligible()` is false -
+   *  the UI's own Cancel/Confirm gate is the primary guard, this is the
+   *  backstop that makes the mutator itself safe to call unconditionally. */
+  reawaken(): boolean {
+    if (!this.reawakenEligible()) return false;
+    const shards = reawakenShardsFor(this.powerScore);
+    const freshPlayer = structuredClone(INITIAL_STATE.player);
+    this.state = {
+      ...this.state,
+      player: { ...freshPlayer, name: this.state.player.name },
+      gatesCleared: {},
+      shadowArmy: [],
+      inventory: structuredClone(INITIAL_STATE.inventory),
+      bag: [],
+      shop: { stock: [], rerollCost: 60, lastRerollAt: 0 },
+      battle: null,
+      talents: { points: 0, unlockedIds: [] },
+      prestige: {
+        reawakeningCount: this.state.prestige.reawakeningCount + 1,
+        shardsBanked: this.state.prestige.shardsBanked + shards
+      },
+      screen: "gates"
+    };
+    this.rerollShop(true);
+    this.showGlobalToast(`Reawakened! +${shards} Monarch Shard${shards === 1 ? "" : "s"}`, "prestige");
+    this.notify();
+    return true;
+  }
+
   private persistNow() {
     writeSave({
       player: this.state.player,
@@ -332,7 +401,9 @@ export class Game {
       shop: this.state.shop,
       progress: this.state.progress,
       talents: this.state.talents,
-      relics: this.state.relics
+      relics: this.state.relics,
+      tower: this.state.tower,
+      prestige: this.state.prestige
     });
   }
 
@@ -581,10 +652,26 @@ export class Game {
     this.notify();
   }
 
+  /** Resolves a battle's `gateId` back to its GateDef - the real content-
+   *  table lookup (GATE_REGISTRY, fixed at build time) for the 20
+   *  explorable Gates and 5 Promotion Exam trials, or a freshly
+   *  synthesized one (towerFloorGate) for an Infinite Tower floor id
+   *  (#17), which by design is never registered there - see
+   *  towerFloorGate's own doc comment for why. Every internal call site
+   *  that reads a *live battle's* gateId back to its GateDef goes through
+   *  this instead of GATE_REGISTRY directly, so Tower support is
+   *  centralized here rather than special-cased at each of them. */
+  private resolveGate(gateId: string): GateDef | undefined {
+    const known = GATE_REGISTRY.get(gateId);
+    if (known) return known;
+    const floor = towerFloorFromGateId(gateId);
+    return floor !== null ? towerFloorGate(floor) : undefined;
+  }
+
   private advanceWave() {
     const battle = this.state.battle;
     if (!battle) return;
-    const gate = GATE_REGISTRY.get(battle.gateId);
+    const gate = this.resolveGate(battle.gateId);
     if (!gate) return;
     const plan = buildWavePlan(gate);
     const trashCount = totalEnemiesForGate(gate) - 1;
@@ -806,6 +893,7 @@ export class Game {
     let pct = title?.bonus.kind === "xpPct" ? title.bonus.value : 0;
     pct += talentXpPct(this.state.talents.unlockedIds);
     pct += relicXpPct(this.state.relics.equippedIds);
+    pct += setXpPct(this.state.player.equipment);
     if (pct > 0) amount = Math.round(amount * (1 + pct));
     const player = { ...this.state.player };
     player.xp += amount;
@@ -836,6 +924,7 @@ export class Game {
       let goldPct = title?.bonus.kind === "goldPct" ? title.bonus.value : 0;
       goldPct += talentGoldPct(this.state.talents.unlockedIds);
       goldPct += relicGoldPct(this.state.relics.equippedIds);
+      goldPct += setGoldPct(this.state.player.equipment);
       // Wealthy/Cursed gate modifiers apply as their own separate
       // multiplier on top of the Title/Talent percentage bonus, the same
       // "gear-then-multiplier" layering effectiveStat already uses -
@@ -853,7 +942,7 @@ export class Game {
     const chance = Math.min(1, baseChance + lootBonus);
     if (Math.random() >= chance) return;
 
-    const gate = GATE_REGISTRY.get(battle.gateId);
+    const gate = this.resolveGate(battle.gateId);
     const rank = gate?.rank ?? "E";
     const rarityBonus = (unit.isElite ? 0.15 : 0) + (battle.isBossWave ? 0.3 : 0) + rankRarityBonus(rank);
     const rarity = rollRarity(rarityBonus);
@@ -1098,36 +1187,53 @@ export class Game {
   private onWaveCleared(battle: BattleState) {
     const deployed = this.state.shadowArmy.find((s) => s.deployed);
     if (deployed) this.growShadowLoyalty(deployed.id);
-    const gate = GATE_REGISTRY.get(battle.gateId);
+    const gate = this.resolveGate(battle.gateId);
     if (battle.isBossWave && gate?.isPromotionExam) {
       this.completePromotionExam(battle, gate);
+      return;
+    }
+    if (battle.isBossWave && gate?.isTowerFloor) {
+      this.completeTowerFloor(battle, gate);
       return;
     }
     if (battle.isBossWave) {
       this.state.gatesCleared = { ...this.state.gatesCleared, [battle.gateId]: true };
       this.state.battle = { ...battle, over: true, result: "gate-clear", locked: false };
       this.rollRelicDropOnBossClear();
+      if (gate) this.rollSetPieceDropOnBossClear(gate.rank);
     } else {
       this.state.battle = { ...battle, over: true, result: "wave-clear", locked: false };
     }
     this.notify();
   }
 
-  /** A real Gate boss clear (never a Promotion Exam boss - onWaveCleared
-   *  branches those off to completePromotionExam before this is ever
-   *  reached, and an exam gate isn't one of the 20 explorable Gates
-   *  anyway) has a flat RELIC_DROP_CHANCE (#15) of turning up a brand-new
-   *  Relic, weighted toward the common "minor" tier the same way
-   *  GATE_MODIFIERS/RANDOM_EVENTS weight their own pools. A no-op once
-   *  every Relic in the roster is already owned (rollRelicDrop returns
-   *  null) - same "ran out of content to grant" shape Achievements
-   *  already has. */
+  /** A real Gate boss clear (never trash, never a Promotion Exam boss,
+   *  never a Tower floor - onWaveCleared branches all of those off before
+   *  this is ever reached) has a flat RELIC_DROP_CHANCE (#15) of turning
+   *  up a brand-new Relic, weighted toward the common "minor" tier the
+   *  same way GATE_MODIFIERS/RANDOM_EVENTS weight their own pools. A
+   *  no-op once every Relic in the roster is already owned (rollRelicDrop
+   *  returns null) - same "ran out of content to grant" shape
+   *  Achievements already has. */
   private rollRelicDropOnBossClear() {
     if (Math.random() >= RELIC_DROP_CHANCE) return;
     const relic = rollRelicDrop(this.state.relics.ownedIds);
     if (!relic) return;
     this.state.relics = { ...this.state.relics, ownedIds: [...this.state.relics.ownedIds, relic.id] };
     this.showGlobalToast(`Relic Found: ${relic.name}`, "relic");
+  }
+
+  /** Same restriction as the Relic roll above (real Gate boss clears
+   *  only), independently rolled - a SET_DROP_CHANCE (#16) shot at a
+   *  random Equipment Set piece landing straight in the Bag. No
+   *  "already owned" exclusion the way Relics have: a set piece is a
+   *  plain LootItem, so a second copy is no different from any other
+   *  loot duplicate. */
+  private rollSetPieceDropOnBossClear(rank: Rank) {
+    if (Math.random() >= SET_DROP_CHANCE) return;
+    const piece = rollSetPieceDrop(rank);
+    this.state.bag = [...this.state.bag, piece];
+    this.showGlobalToast(`Set Piece Found: ${piece.name}`, "set");
   }
 
   /** Item #10 of the fixed roadmap. Which rank tier a Promotion Exam is
@@ -1179,6 +1285,85 @@ export class Game {
       this.showGlobalToast(`Promoted to ${newRank}-Rank Hunter!`, "promotion");
     }
     this.state.battle = { ...battle, over: true, result: "exam-pass", locked: false };
+    this.notify();
+  }
+
+  /** Defeating a Tower floor's boss (#17) updates the permanent
+   *  `tower.highestFloor` record (never lowered, only ever raised - a
+   *  fresh climb always starts back at floor 1, see startTowerFloor) and
+   *  pays a milestone gold bonus every TOWER_MILESTONE_INTERVAL floors,
+   *  on top of whatever the fight itself already granted via the normal
+   *  applyDamage/grantKillRewards path. Deliberately does *not* touch
+   *  `gatesCleared` or roll a Relic/Set-piece drop - those stay a real
+   *  Gate's own identity (see onWaveCleared), not something Tower climbs
+   *  also grant, so the two modes keep clearly separate reward shapes. */
+  private completeTowerFloor(battle: BattleState, gate: GateDef) {
+    const floor = towerFloorFromGateId(gate.id) ?? 1;
+    if (floor > this.state.tower.highestFloor) {
+      this.state.tower = { ...this.state.tower, highestFloor: floor };
+    }
+    if (floor % TOWER_MILESTONE_INTERVAL === 0) {
+      const bonus = towerMilestoneGold(floor);
+      this.state.player = { ...this.state.player, gold: this.state.player.gold + bonus };
+      this.showGlobalToast(`Tower Milestone: Floor ${floor} — +${bonus} Gold!`, "tower");
+    }
+    this.state.battle = { ...battle, over: true, result: "tower-floor-clear", locked: false };
+    this.notify();
+  }
+
+  /** Begins a fresh Tower climb at floor 1 - always floor 1, never a
+   *  resume of a previous best (see TowerState's own doc comment for why
+   *  there's no "currentFloor" to resume from). Reuses `startBattle`
+   *  completely unchanged, the same way Promotion Exams do: a Tower floor
+   *  is just a `GateDef` flagged `isTowerFloor` (towerFloorGate), so the
+   *  whole battle engine already works for it with zero special-casing
+   *  there. */
+  startTowerFloor() {
+    this.startBattle(towerFloorGate(1));
+  }
+
+  /** Advances to the *next* Tower floor after a clear - unlike
+   *  `advanceWave` (which pulls the next wave from the *same* gate's own
+   *  plan), each Tower floor is its own freshly synthesized GateDef, so
+   *  this builds a brand-new BattleState rather than spreading the old
+   *  one. Player HP/MP are deliberately left untouched (not reset the way
+   *  `startBattle` resets them at a fresh gate entry) so they carry
+   *  floor-to-floor exactly the way they already carry wave-to-wave
+   *  within a Gate. A fresh Dungeon Modifier and Random Event roll happen
+   *  every floor (unlike a Gate, where one modifier covers the whole
+   *  run) - each floor is its own self-contained encounter, not a
+   *  multi-wave gauntlet, so varying it per floor reads as "a new room",
+   *  not "your modifier changed mid-fight". */
+  private advanceTowerFloor() {
+    const battle = this.state.battle;
+    if (!battle) return;
+    const floor = towerFloorFromGateId(battle.gateId);
+    if (floor === null) return;
+    const gate = towerFloorGate(floor + 1);
+    const entry = buildWavePlan(gate)[0];
+    const modifier = rollGateModifier();
+    const enemies = this.makeEnemies(gate, entry, 0, modifier);
+
+    const event = rollRandomEvent(true);
+    if (event) {
+      this.incrementCounter(COUNTER_KEYS.randomEventsTriggered);
+      this.applyRandomEvent(event, gate.rank);
+      if (event.effect.kind === "ambush") {
+        enemies.push(this.makeTrashUnit(gate, 0, 0, modifier, true));
+      }
+    }
+
+    this.state.battle = {
+      gateId: gate.id, gateName: gate.name, rank: gate.rank,
+      isBossWave: true,
+      waveIndex: floor + 1, totalWaves: floor + 1,
+      enemies,
+      modifier,
+      over: false, result: null, guardRounds: 0, locked: false,
+      playerHit: false, skillPanelOpen: false, itemPanelOpen: false,
+      vfxPlayer: null, guardRing: false, lunge: null, flash: false,
+      floatPlayer: null, playerGlow: false, shadowLunge: false, bossEnraged: false
+    };
     this.notify();
   }
 
@@ -1501,7 +1686,7 @@ export class Game {
 
   ariseShadow() {
     const battle = this.state.battle;
-    if (!battle || (battle.result !== "wave-clear" && battle.result !== "gate-clear")) return;
+    if (!battle || (battle.result !== "wave-clear" && battle.result !== "gate-clear" && battle.result !== "tower-floor-clear")) return;
     // Confirmed rank (#10) - a Shadow arises at your officially recognized
     // strength, not merely what your level alone would qualify for.
     const rank = this.state.player.rank;
@@ -1525,6 +1710,8 @@ export class Game {
         this.state.battle = null;
         this.notify();
       }, 650);
+    } else if (battle.result === "tower-floor-clear") {
+      setTimeout(() => this.advanceTowerFloor(), 650);
     } else {
       setTimeout(() => this.advanceWave(), 650);
     }
@@ -1698,11 +1885,20 @@ export class Game {
       this.advanceWave();
       return;
     }
+    if (battle.result === "tower-floor-clear") {
+      this.advanceTowerFloor();
+      return;
+    }
     this.retreatBattle();
   }
 
+  /** Lands back on Gates after an ordinary/exam battle, or on the Tower
+   *  lobby (#17) after a Tower one, so a defeat or a "no more" retreat
+   *  always drops you back at the mode you were actually in rather than
+   *  always assuming Gates. */
   retreatBattle() {
-    this.state.screen = "gates";
+    const wasTower = this.state.battle ? towerFloorFromGateId(this.state.battle.gateId) !== null : false;
+    this.state.screen = wasTower ? "tower" : "gates";
     this.state.battle = null;
     this.notify();
   }
@@ -1895,11 +2091,12 @@ export class Game {
     return (GATE_REGISTRY.all() as GateDef[]).filter((g) => !g.isPromotionExam);
   }
 
-  /** O(1) gate-by-id lookup for the UI (e.g. the Gates screen resolving a
-   *  clicked row's id back to its GateDef) - the same registry startBattle
-   *  and grantKillRewards already use internally. Covers exam gates too,
-   *  even though `gates` above hides them from the normal list. */
+  /** Gate-by-id lookup for the UI (e.g. the Gates screen resolving a
+   *  clicked row's id back to its GateDef) - the same resolveGate every
+   *  internal battle call site uses, so it also covers exam gates and
+   *  Tower floor ids consistently, even though `gates` above hides exam
+   *  gates from the normal list and Tower floors are never in it at all. */
   getGate(id: string): GateDef | undefined {
-    return GATE_REGISTRY.get(id);
+    return this.resolveGate(id);
   }
 }

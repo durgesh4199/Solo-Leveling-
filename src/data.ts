@@ -130,10 +130,11 @@ export const TOTAL_ENEMIES_BY_RANK: Record<Rank, number> = {
 /** Enemies fought simultaneously in one non-boss wave. */
 export const GROUP_SIZE = 3;
 
-/** A Promotion Exam (#10) is a single solo boss trial, no trash waves -
- *  overrides the normal rank-based enemy count down to just the boss. */
+/** A Promotion Exam (#10) or an Infinite Tower floor (#17) is a single
+ *  solo boss encounter, no trash waves - overrides the normal rank-based
+ *  enemy count down to just the boss. */
 export function totalEnemiesForGate(gate: GateDef): number {
-  if (gate.isPromotionExam) return 1;
+  if (gate.isPromotionExam || gate.isTowerFloor) return 1;
   return TOTAL_ENEMIES_BY_RANK[gate.rank];
 }
 
@@ -348,6 +349,26 @@ export function generateLoot(rank: Rank, rarity: ItemRarity, forcedSlot?: ItemSl
     id: `item-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
     name, slot, rarity, affixes,
     icon: SLOT_ICON[slot]
+  };
+}
+
+/** Generates one Equipment Set piece (#16, systems/sets/) - unlike
+ *  generateLoot's randomly-chosen affix pool and generated name, a set
+ *  piece's name/slot/icon and *which* affix keys it rolls are fixed by
+ *  its EquipmentSetDef (systems/sets/data.ts calls this, one call per
+ *  piece), so the same piece always grants the same kind of bonus and is
+ *  always recognizable by name. Only the numeric *magnitude* of each
+ *  affix scales with rank, reusing the exact same rankPower/rollAffixValue
+ *  machinery generateLoot itself uses (always at legendary's statMult, so
+ *  a set piece is always a real, notable find regardless of rank) rather
+ *  than a second, independently-tuned formula that could drift out of
+ *  sync with normal loot's own power curve. */
+export function generateSetPiece(rank: Rank, slot: ItemSlot, name: string, affixKeys: AffixKey[], icon: string, setId: string): LootItem {
+  const rankPower = 3 + RANK_INDEX[rank] * 2;
+  const affixes: ItemAffix[] = affixKeys.map((key) => ({ key, value: rollAffixValue(key, rankPower, RARITY_META.legendary.statMult) }));
+  return {
+    id: `item-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
+    name, slot, rarity: "legendary", affixes, icon, setId
   };
 }
 

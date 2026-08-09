@@ -736,10 +736,126 @@ touching anything below.
       rolling a Relic even with `Math.random` forced to guarantee a drop
       if the code path were ever reached, and the `continueSave()`
       backfill for a save missing the `relics` slice entirely.
-16. Equipment Sets — pending.
+16. **Equipment Sets** — ✅ **Done.** New `src/systems/sets/` and one new
+    optional field, `LootItem.setId?: string` - undefined-safe everywhere
+    it's read (no save migration needed, same "genuinely falsy-safe"
+    shape `hunterClass: null` already established, unlike Relics/Crafting/
+    Tower/Prestige's new top-level slices which all needed one).
+    - **What makes a Set genuinely different from Relics** (both are RNG
+      boss drops): a Relic is a wholly separate accessory slot dimension
+      that never competes with the 6 core gear slots; a Set piece *is*
+      ordinary gear - it drops into the same paperdoll slots as any other
+      loot and directly competes with the best-rolled affix roll for that
+      slot. The tension a Set creates is real: commit to matching pieces
+      for a threshold bonus, or keep whatever rolled the best individual
+      affixes.
+    - **3 sets, one per broad build identity** (offense/defense/utility,
+      the same 3-way split the Talent Tree's branches already use) -
+      Vanguard's Warplate (STR/Crit), Warden's Bulwark (VIT/INT/All
+      Stats), Nightstalker's Guise (AGI/Gold/Crit) - each covering all 6
+      gear slots, always "legendary" rarity (`generateSetPiece`) so a set
+      piece reads as a real find the instant it drops, no separate lucky
+      rarity roll needed on top.
+    - **`generateSetPiece` reuses `generateLoot`'s own rank-power/
+      `rollAffixValue` machinery** rather than a second, independently-
+      tuned formula - a set piece's *name* and *which* affix keys it
+      rolls are fixed by its `SetPieceDef` (always recognizably "this"
+      piece), but the numeric *magnitude* of each affix still scales with
+      the rank it drops at, so a Set piece never goes stale at high ranks
+      the way a hand-authored flat number would have.
+    - **Threshold bonuses are cumulative** (2pc/4pc/6pc, not "replace the
+      previous tier") - at 4 pieces equipped, both the 2pc and the 4pc
+      bonus are active at once, so committing deeper into one set over
+      mixing loose pieces keeps paying off at every step.
+    - **No ownership tracking** the way Relics have (`RelicState
+      .ownedIds`) - a set piece is a plain `LootItem` sitting in the Bag/
+      equipment like any other, so a duplicate drop is no different from
+      any other loot duplicate (sell it like one).
+    - **Fifth system into the shared additive pct pipeline** - `setStatPct
+      /setCritFlat/setXpPct/setGoldPct` (keyed off `player.equipment`
+      directly, not a separate stored list, so it can never drift from
+      what's actually worn) fold into the same combined `pct`
+      `effectiveStat`/`critChance`/`grantXp`/`grantKillRewards` already
+      compute for title + talent + relic.
+    - **Independent boss-drop roll alongside the Relic one** (`SET_DROP_
+      CHANCE = 0.1`, `Game.rollSetPieceDropOnBossClear`) - same real-Gate-
+      boss-clear-only restriction as Relics, rolled separately so getting
+      one doesn't affect the odds of the other.
+    - New Set Bonuses panel on Inventory's Gear sub-tab (`drawSetBonuses`)
+      - every set always shows (same "locked but not hidden" convention
+      Titles/Relics use), listing all 6 piece names and every threshold's
+      active/inactive state. A small "SET" badge marks a set-tagged item
+      directly on the paperdoll.
+    - Verified via a live `Game` instance: roster shape (3 sets, 6 slots
+      each, unique ids), `generateSetPiece`'s fixed keys/rank-scaling,
+      `rollSetPieceDrop`'s variety across slots/sets over 100 trials,
+      `equippedSetCounts`/the cumulative 2pc/4pc/6pc threshold math at
+      2/4/6 pieces equipped, `effectiveStat` reflecting an equipped
+      threshold, the forced boss-clear roll landing a legendary tagged
+      item in the Bag with the toast firing, and a non-boss wave clear
+      never rolling one.
 
 ### Phase 6 — Endgame & meta-progression
-17. Infinite Tower — pending.
+17. **Infinite Tower** — ✅ **Done.** New `src/systems/tower/` and a new
+    top-level `GameState.tower: TowerState` (`{ highestFloor }`) - a
+    single permanent record, not a resumable in-progress climb.
+    - **Reuses the whole battle engine unchanged**, the same way
+      Promotion Exams (#10) do: a Tower floor is just a `GateDef` flagged
+      `isTowerFloor` (`towerFloorGate(floor)`, synthesized on demand -
+      unlike `GATES_DATA`/`EXAM_GATES_DATA` there's no fixed table of
+      these, since there's no upper bound on how high a climb can go), so
+      combat/loot/XP/crit/Dungeon-Modifiers/Random-Events all already
+      work for it with zero special-casing in the battle engine itself.
+    - **New `Game.resolveGate(gateId)`** centralizes the one real new
+      piece of plumbing this needed: every internal call site that used
+      to read a live battle's `gateId` straight off `GATE_REGISTRY`
+      (`advanceWave`, `grantKillRewards`, `onWaveCleared`, the public
+      `getGate`) now goes through this instead - it checks the real
+      registry first, falling back to synthesizing a Tower floor only if
+      the id parses as one (`towerFloorFromGateId`), so every non-Tower
+      call site is byte-for-byte unchanged.
+    - **Every floor is a solo boss, no trash** (`totalEnemiesForGate`
+      collapses `isTowerFloor` gates to 1, same as `isPromotionExam`) -
+      stats grow **linearly**, not exponentially, at 3.5% of the floor-1
+      baseline per floor: gentle enough to stay well-behaved at very high
+      floor counts (no overflow risk) while genuinely endless (no coded
+      cap). Floor 1's baseline is tuned close to the first E-rank Gate's
+      own boss, so a fresh Level 1 Hunter can fairly attempt it.
+    - **One continuous run**: HP/MP carry floor-to-floor exactly the way
+      they already carry wave-to-wave within a Gate (`advanceTowerFloor`
+      deliberately never resets them, unlike `startBattle`'s fresh-entry
+      reset) - a defeat ends the run but the `highestFloor` record it
+      already climbed to during it is safe.
+    - **Every floor rolls its own fresh Dungeon Modifier and Random
+      Event** (unlike a Gate, where one modifier covers the whole run) -
+      each floor is its own self-contained encounter, not a wave within a
+      larger plan, so varying it per floor reads as "a new room", not "your
+      modifier changed mid-fight".
+    - **Milestone gold every `TOWER_MILESTONE_INTERVAL` (10) floors** on
+      top of each floor's own normal boss-kill reward, scaling with the
+      floor - a small "you've come a long way" nudge for a long climb.
+    - **Deliberately does not touch `gatesCleared` or roll a Relic/Set-
+      piece drop** - those stay a real Gate's own reward identity;
+      `onWaveCleared` branches a Tower floor's boss clear off to
+      `completeTowerFloor` before either would ever fire, keeping the two
+      modes' reward shapes clearly separate.
+    - New Tower screen/tab (`screens/tower.ts`, a `simpleScreen` lobby -
+      "Begin Climb"/"Climb Again", the current record, and the rules)
+      plus Tower-aware text on the Battle screen (`FLOOR N` instead of
+      `WAVE X/Y`/`FINAL WAVE`, a `tower-floor-clear` result panel with
+      "Next Floor", and a defeat subtitle reporting which floor was
+      reached). `retreatBattle()` now routes back to the Tower lobby
+      after a Tower battle instead of always assuming Gates.
+    - Verified via a live `Game` instance: id round-tripping
+      (`towerGateId`/`towerFloorFromGateId`), rank-band boundaries (26/51/
+      91/141), stat growth, `totalEnemiesForGate`'s collapse,
+      `startTowerFloor` always starting at floor 1, `resolveGate`
+      synthesizing a floor not in `GATE_REGISTRY`, `completeTowerFloor`
+      raising (never lowering) the record, the milestone gold trigger,
+      `advanceTowerFloor` carrying HP/MP and building the correct next
+      floor, `continueAfterWave`/`ariseShadow`/`retreatBattle` all
+      routing correctly for a Tower battle, and the `continueSave()`
+      backfill for a save missing the `tower` slice.
 18. **Achievements** — ✅ **Done** (built ahead of its numbered slot, see
     note below). `src/systems/achievements/` - 28-entry starter roster
     across kills/collection/rank/gates/bosses/gold/crits/potions/level,
@@ -752,7 +868,59 @@ touching anything below.
     `grantKillRewards` the same way equipment affixes already do.
 
 ### Phase 7 — Prestige
-20. Prestige/Reawakening — pending.
+20. **Prestige/Reawakening** — ✅ **Done.** New `src/systems/prestige/`
+    and a new top-level `GameState.prestige: PrestigeState`
+    (`{ reawakeningCount, shardsBanked }`).
+    - **Eligibility**: confirmed S-Rank (#10's `PlayerState.rank`, not
+      merely level-implied) at `REAWAKEN_MIN_LEVEL` (30) or above - by
+      that point a Hunter has realistically exhausted what the current
+      content ceiling offers, which is the whole point of Reawakening
+      existing at all. `Game.reawakenEligible()` is the single source of
+      truth the UI gates its button on and `Game.reawaken()` itself
+      re-checks as a backstop (a no-op, zero mutation, if called while
+      ineligible).
+    - **A deliberately partial wipe**, much narrower than
+      `startNewHunter`'s complete one: **resets** player stats/gold/gear/
+      rank/hunterClass/shadowEssence (name kept), `gatesCleared`,
+      `shadowArmy`, the Bag, Shop stock, and Talent points/unlocks.
+      **Keeps** `progress` (Titles/Achievements/lifetime counters -
+      already treated as permanent everywhere else), **both** owned and
+      equipped Relics (a deliberate reward for Reawakening, not just
+      another reset), `tower.highestFloor`, and of course `prestige`
+      itself, which only ever grows.
+    - **Monarch Shards, granted by `reawakenShardsFor(powerScore)`** -
+      scaled off the Hunter's Power Score at the moment of reawakening (a
+      single number that already folds in level/stats/gear/Shadows/
+      Relics/Sets) rather than a second, narrower formula, floored at 1.
+      Shards are **never spent** - they bank permanently and grant a
+      small, uncapped `allStatsPct` bonus (`PRESTIGE_PCT_PER_SHARD =
+      0.4%` per shard) folded into `effectiveStat`'s shared `pct`, the
+      sixth system now feeding it. No hard cap needed to keep this sane -
+      Reawakening itself is the rate-limiter (a full run back to Level
+      30+ S-Rank every time).
+    - **Sixth system into the shared additive pct pipeline**, but
+      deliberately touches *only* `effectiveStat` (an `allStatsPct`-only
+      bonus), not `critChance`/`grantXp`/`grantKillRewards` - the
+      "small additive-feeling percentages stacked on the existing
+      effectiveStat pipeline" guardrail language names exactly this one
+      site, and Prestige doesn't need the other three to feel meaningful.
+    - New Prestige sub-tab on Status (`renderPrestige`) - shows the
+      Reawakening count, banked Shards, and the resulting bonus
+      percentage; the Reawaken button itself goes through the same
+      Cancel/Confirm gate every other irreversible action uses (Merge/
+      Evolve/Disenchant/Class), plus an explicit plain-language breakdown
+      of exactly what resets vs. what's kept, since that's the one thing
+      a player genuinely can't guess on their own here.
+    - Verified via a live `Game` instance: `reawakenShardsFor`'s floor and
+      scaling, `prestigeAllStatsPct`'s linear-per-shard formula,
+      `reawakenEligible` at every boundary (rank alone insufficient,
+      level alone insufficient, both together sufficient),
+      `reawaken()` rejecting (with zero mutation) when ineligible, the
+      full eligible flow verifying every individual reset field, every
+      individual kept field, the correct shard/count increments, and the
+      landing screen/toast, `effectiveStat` reflecting banked Shards, and
+      the `continueSave()` backfill for a save missing the `prestige`
+      slice.
 
 > **Note on #18/#19 being done early:** the previous work session built
 > Save/Titles/Achievements together as one foundational "Phase 1" before

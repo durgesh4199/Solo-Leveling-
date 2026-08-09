@@ -12,8 +12,9 @@ import { CLASS_UNLOCK_LEVEL, HUNTER_CLASSES } from "../systems/classes/data";
 import type { HunterClassId } from "../types";
 import { RELICS, RELIC_SLOT_COUNT } from "../systems/relics/data";
 import type { RelicTier } from "../systems/relics/types";
+import { PRESTIGE_PCT_PER_SHARD, REAWAKEN_MIN_LEVEL, prestigeAllStatsPct } from "../systems/prestige/data";
 
-type SubTab = "status" | "titles" | "achievements" | "talents" | "class" | "relics";
+type SubTab = "status" | "titles" | "achievements" | "talents" | "class" | "relics" | "prestige";
 
 /** What a single point in this stat actually buys, in concrete numbers -
  *  previewed on hover (before you commit) and floated as a confirmation
@@ -386,6 +387,9 @@ export const statsScreen: ScreenModule = (root, game) => {
   // track across redraws, and this factory already gets a fresh closure
   // per screen mount the way module-level state wouldn't.
   let classConfirmId: HunterClassId | null = null;
+  // Whether the "Reawaken forever?" confirm is showing (#20) - the same
+  // reason classConfirmId lives here rather than module-level.
+  let reawakenConfirming = false;
 
   const subTabBtn = (tab: SubTab, label: string, iconName: string) => `
     <button class="btn ${subTab === tab ? "btn-primary" : "btn-secondary"} action-btn" data-substat="${tab}"
@@ -459,6 +463,60 @@ export const statsScreen: ScreenModule = (root, game) => {
     });
   };
 
+  /** Reawakening (#20) is the most permanent choice in the game - a full
+   *  reset of the current run - so it gets the same Cancel/Confirm gate
+   *  every other irreversible action does, plus (unlike Merge/Evolve/
+   *  Class) an explicit breakdown of exactly what resets vs. what's kept,
+   *  since "what carries over" is the one thing a player genuinely can't
+   *  guess on their own here. */
+  const renderPrestige = (body: HTMLElement) => {
+    const p = game.state.player;
+    const prestige = game.state.prestige;
+    const eligible = game.reawakenEligible();
+    const bonus = (prestigeAllStatsPct(prestige.shardsBanked) * 100).toFixed(1);
+
+    const reawakenAction = !eligible
+      ? `<div style="font-size:12px;color:var(--color-neutral-500);padding:var(--space-3) 0;">Reach Level ${REAWAKEN_MIN_LEVEL} as a confirmed S-Rank Hunter to Reawaken. Currently: Level ${p.level}, ${p.rank}-Rank.</div>`
+      : reawakenConfirming
+      ? `
+        <div style="font-size:11px;color:var(--color-accent-300);text-align:center;padding:var(--space-2) 0;">
+          Resets your Hunter to Level 1 - stats, gear, gold, Shadows, Talents, and Gate progress.
+          You keep your Titles, Achievements, Relics, and Tower record, plus Monarch Shards for a
+          permanent All Stats bonus. This can't be undone.
+        </div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="cancel-reawaken">Cancel</button>
+          <button class="btn btn-primary action-btn" style="flex:1;justify-content:center;padding:6px;font-size:11px;" data-action="confirm-reawaken">Reawaken</button>
+        </div>`
+      : `<button class="btn btn-primary action-btn" style="justify-content:center;padding:var(--space-3);font-size:13px;" data-action="start-reawaken">${icon("sparkles")} Reawaken</button>`;
+
+    body.innerHTML = `
+      <div style="flex:1;display:flex;flex-direction:column;padding:var(--space-6);gap:var(--space-3);overflow-y:auto;">
+        <div class="card power-card" style="padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2);border:1px solid var(--color-accent-700);">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:20px;color:var(--color-accent-300);">${icon("sparkles")}</span>
+            <div style="font-size:16px;font-weight:600;">${prestige.reawakeningCount} Reawakening${prestige.reawakeningCount === 1 ? "" : "s"}</div>
+          </div>
+          <div style="font-size:12px;color:var(--color-neutral-400);">${prestige.shardsBanked} Monarch Shard${prestige.shardsBanked === 1 ? "" : "s"} banked - permanent +${bonus}% All Stats, every run, forever.</div>
+        </div>
+        <div style="font-size:11px;color:var(--color-neutral-500);">Monarch Shards are never spent - every Reawakening only adds to this bonus.</div>
+        ${reawakenAction}
+      </div>`;
+
+    body.querySelector<HTMLElement>('[data-action="start-reawaken"]')?.addEventListener("click", () => {
+      reawakenConfirming = true;
+      renderPrestige(body);
+    });
+    body.querySelector<HTMLElement>('[data-action="cancel-reawaken"]')?.addEventListener("click", () => {
+      reawakenConfirming = false;
+      renderPrestige(body);
+    });
+    body.querySelector<HTMLElement>('[data-action="confirm-reawaken"]')?.addEventListener("click", () => {
+      game.reawaken();
+      reawakenConfirming = false;
+    });
+  };
+
   const mountSubTab = () => {
     statusController?.unmount?.();
     statusController = null;
@@ -478,6 +536,7 @@ export const statsScreen: ScreenModule = (root, game) => {
           ${subTabBtn("relics", "Relics", "circle-dashed")}
           ${subTabBtn("titles", "Titles", "sparkles")}
           ${subTabBtn("achievements", "Achievements", "check-circle")}
+          ${subTabBtn("prestige", "Prestige", "moon-stars")}
         </div>
       </div>
       <div id="stats-subtab-body" style="flex:1;display:flex;flex-direction:column;min-height:0;"></div>
@@ -493,6 +552,7 @@ export const statsScreen: ScreenModule = (root, game) => {
     else if (subTab === "talents") renderTalents(body, game);
     else if (subTab === "relics") renderRelics(body, game);
     else if (subTab === "titles") renderTitles(body, game);
+    else if (subTab === "prestige") renderPrestige(body);
     else renderAchievements(body, game);
   };
 
